@@ -1,0 +1,43 @@
+{
+  "name": "openscreentranslate",
+  "description": "Open-source macOS menu bar screenshot translation app",
+  "private": true,
+  "version": "0.1.0",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "version:sync": "node ./scripts/sync-version.mjs",
+    "version:check": "node ./scripts/sync-version.mjs --check",
+    "predev": "npm run version:sync",
+    "dev": "vite",
+    "prebuild": "npm run version:sync",
+    "build": "tsc && vite build",
+    "security:check": "node ./scripts/check-sensitive-files.mjs",
+    "check": "./scripts/check.sh",
+    "settings:delete": "./scripts/delete-macos-settings.sh",
+    "build:macos:debug": "./scripts/build-macos-debug-app.sh",
+    "reset:macos:screen-capture": "./scripts/reset-macos-screen-capture-permission.sh",
+    "prebuild:macos:app": "npm run version:sync",
+    "build:macos:app": "tauri build --bundles app && ./scripts/sign-macos-app.sh",
+    "release:macos:setup": "./scripts/release-macos-dmg.sh setup",
+    "prerelease:macos": "npm run version:sync",
+    "release:macos": "./scripts/release-macos-dmg.sh release",
+    "release:macos:resume": "./scripts/release-macos-dmg.sh resume",
+    "prerelease:macos:universal": "npm run version:sync",
+    "release:macos:universal": "./scripts/release-macos-dmg.sh release --target universal",
+    "preview": "vite preview",
+    "pretauri": "npm run version:sync",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "vite": "^6.0.3",
+    "typescript": "~5.6.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

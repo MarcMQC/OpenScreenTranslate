@@ -1,0 +1,67 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "OpenScreenTranslate",
+  "version": "0.1.0",
+  "identifier": "com.openscreentranslate.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "macOSPrivateApi": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "OpenScreenTranslate 设置",
+        "width": 560,
+        "height": 640,
+        "center": true,
+        "resizable": false,
+        "visible": false
+      },
+      {
+        "label": "capture",
+        "title": "截图选区",
+        "url": "index.html?view=capture",
+        "width": 800,
+        "height": 600,
+        "decorations": false,
+        "transparent": true,
+        "resizable": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "visible": false
+      },
+      {
+        "label": "result",
+        "title": "OPENSCREENTRANSLATE",
+        "url": "index.html?view=result",
+        "width": 640,
+        "height": 404,
+        "center": true,
+        "resizable": false,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "alwaysOnTop": true,
+        "visible": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "macOS": {
+      "minimumSystemVersion": "14.0",
+      "infoPlist": "Info.plist"
+    },
+    "icon": [
+      "icons/icon.icns"
+    ]
+  }
+}
