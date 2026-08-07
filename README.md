@@ -35,13 +35,11 @@ OpenScreenTranslate 基于 Tauri 2、Rust、ScreenCaptureKit 与 Apple Vision �
 开发环境需要 Node.js 20 或更高版本、Rust stable 与 Xcode Command Line Tools。
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/MarcMQC/OpenScreenTranslate.git
 cd openscreentranslate
 npm install
 npm run tauri dev
 ```
-
-请将 `<repository-url>` 替换为仓库公开后的实际 Git 地址。
 
 ## 使用方式
 
