@@ -14,16 +14,16 @@ OpenScreenTranslate 基于 Tauri 2、Rust、ScreenCaptureKit 与 Apple Vision �
 - 使用 Apple Vision 在本机识别选区内的多语言文本
 - 允许编辑识别结果，修正 OCR 误差后重新翻译
 - 使用独立快捷键直接打开手动翻译窗口
-- 支持 DeepSeek、OpenAI、Anthropic Claude 与 Google Gemini
-- 支持自定义模型名称和完整请求 URL，兼容自建服务
+- 支持 DeepSeek、OpenAI、Anthropic Claude、Google Gemini 与自定义兼容服务
+- 可为兼容服务填写模型名称和完整的 Chat Completions 请求 URL
 - API Key 仅保存在 macOS 钥匙串中，不写入普通配置文件
-- 首次启动自动打开设置页面，引导完成 AI 服务配置
+- 首次启动通过引导页完成屏幕录制权限、AI 服务、快捷键与启动偏好设置
 - 支持登录 macOS 时自动启动
 
 ## 系统要求
 
 - macOS 14 或更高版本
-- 屏幕录制权限（仅截图翻译需要）
+- 屏幕录制权限
 - 至少一个受支持 AI 服务的 API Key 或兼容接口
 
 ## 安装
@@ -31,7 +31,7 @@ OpenScreenTranslate 基于 Tauri 2、Rust、ScreenCaptureKit 与 Apple Vision �
 ### 从 Release 安装
 
 从仓库的 Releases 页面下载最新 `.dmg`，打开后将 OpenScreenTranslate 拖入
-“应用程序”文件夹。首次截图时，请根据系统提示授予屏幕录制权限。
+“应用程序”文件夹。首次启动时，请按照引导页授予屏幕录制权限、配置 AI 服务并选择使用偏好。
 
 ### 从源码运行
 
@@ -46,13 +46,13 @@ npm run tauri dev
 
 ## 使用方式
 
-1. 从菜单栏打开“设置”，配置 AI 服务供应商、模型、请求 URL 和 API Key。
+1. 完成首次启动引导，包括屏幕录制权限和 AI 服务 API Key。
 2. 使用“截图并翻译”快捷键框选屏幕内容，或使用“翻译”快捷键手动输入文本。
 3. 在翻译窗口中调整源语言和目标语言；识别文本不准确时可直接修改原文。
 
 新安装默认使用 `Command+1` 截图并翻译、`Command+2` 打开手动翻译，登录时
-自动启动默认关闭。应用启动时会检查屏幕录制权限；macOS 尚未记录授权选择时，应用
-会主动发起系统授权请求。
+自动启动默认关闭。应用启动时会检查屏幕录制权限和当前 AI 服务的 API Key；任一项
+缺失时会重新打开引导页。
 
 ## 开发
 

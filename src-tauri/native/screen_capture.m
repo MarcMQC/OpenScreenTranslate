@@ -81,6 +81,12 @@ bool ost_request_screen_capture_permission(void) {
   return CGRequestScreenCaptureAccess();
 }
 
+bool ost_open_screen_capture_settings(void) {
+  NSURL *url = [NSURL URLWithString:
+      @"x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"];
+  return url != nil && [[NSWorkspace sharedWorkspace] openURL:url];
+}
+
 void ost_configure_capture_window(void *window_pointer) {
   if (window_pointer == NULL) {
     return;

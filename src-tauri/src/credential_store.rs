@@ -10,6 +10,7 @@ fn service_name(provider: &str) -> Result<&'static str, String> {
         "openai" => Ok("com.openscreentranslate.openai"),
         "anthropic" => Ok("com.openscreentranslate.anthropic"),
         "gemini" => Ok("com.openscreentranslate.google-gemini"),
+        "compatible" => Ok("com.openscreentranslate.openai-compatible"),
         _ => Err("不支持所选的 AI 供应商".to_string()),
     }
 }
@@ -81,6 +82,10 @@ mod tests {
         assert_ne!(
             service_name("openai").expect("OpenAI should be supported"),
             service_name("anthropic").expect("Anthropic should be supported")
+        );
+        assert_eq!(
+            service_name("compatible").expect("compatible services should be supported"),
+            "com.openscreentranslate.openai-compatible"
         );
         assert!(service_name("unknown").is_err());
     }

@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import appIconUrl from "../src-tauri/icons/128x128.png";
 
 const MAX_SOURCE_TEXT_LENGTH = 5000;
 
@@ -14,7 +15,7 @@ type Selection = Point & {
   height: number;
 };
 
-type ProviderId = "deepseek" | "openai" | "anthropic" | "gemini";
+type ProviderId = "deepseek" | "openai" | "anthropic" | "gemini" | "compatible";
 type LanguageCode =
   | "zh-CN"
   | "zh-TW"
@@ -38,6 +39,13 @@ type TranslationSettings = {
   provider: ProviderId;
   configuredProviders: ProviderId[];
   providerConfigs: Record<ProviderId, ProviderRequestConfig>;
+};
+
+type StartupReadiness = {
+  screenCapturePermissionGranted: boolean;
+  apiKeyConfigured: boolean;
+  onboardingCompleted: boolean;
+  provider: ProviderId;
 };
 
 type ShortcutStatus = {
@@ -98,6 +106,7 @@ const PROVIDER_ICONS: Record<ProviderId, string> = {
   openai: `<svg viewBox="146 227 268 265" role="img" aria-label="OpenAI"><path d="M249.176 323.434V298.276c0-2.118.795-3.707 2.649-4.767l50.581-29.128c6.884-3.972 15.094-5.826 23.567-5.826 31.777 0 51.904 24.63 51.904 50.844 0 1.854 0 3.972-.266 6.091l-52.433-30.719c-3.177-1.852-6.356-1.852-9.533 0l-66.469 38.663Zm118.107 97.981v-60.114c0-3.709-1.589-6.356-4.767-8.209l-66.468-38.662 21.715-12.448c1.854-1.057 3.443-1.057 5.295 0l50.581 29.13c14.566 8.474 24.364 26.48 24.364 43.957 0 20.126-11.916 38.664-30.72 46.343v.003Zm-133.73-52.963-21.715-12.71c-1.852-1.058-2.648-2.647-2.648-4.767v-58.257c0-28.335 21.715-49.786 51.111-49.786 11.122 0 21.447 3.709 30.189 10.328l-52.169 30.189c-3.175 1.854-4.766 4.502-4.766 8.21v76.796l-.002-.003Zm46.739 27.01-31.116-17.477v-37.072l31.116-17.477 31.115 17.477v37.072l-31.115 17.477Zm19.994 80.506c-11.123 0-21.449-3.709-30.189-10.328l52.167-30.191c3.177-1.852 4.766-4.5 4.766-8.21v-76.794l21.981 12.71c1.854 1.058 2.649 2.647 2.649 4.767v58.257c0 28.335-21.981 49.786-51.374 49.786v.003Zm-62.761-59.053-50.581-29.13c-14.566-8.475-24.362-26.48-24.362-43.958 0-20.391 12.181-38.663 30.981-46.342v60.376c0 3.71 1.591 6.356 4.767 8.21l66.205 38.396-21.715 12.448c-1.853 1.057-3.443 1.057-5.295 0Zm-2.911 43.428c-29.925 0-51.904-22.51-51.904-50.315 0-2.118.266-4.236.528-6.356l52.167 30.191c3.177 1.852 6.358 1.852 9.533 0l66.469-38.397v25.156c0 2.12-.795 3.709-2.649 4.767l-50.579 29.13c-6.886 3.972-15.096 5.824-23.568 5.824h.003Zm65.672 31.511c32.043 0 58.787-22.772 64.881-52.962 29.658-7.681 48.725-35.486 48.725-63.819 0-18.538-7.944-36.544-22.244-49.521 1.324-5.561 2.118-11.122 2.118-16.682 0-37.867-30.718-66.204-66.204-66.204-7.149 0-14.034 1.057-20.918 3.443-11.919-11.652-28.337-19.067-46.343-19.067-32.043 0-58.788 22.773-64.881 52.962-29.659 7.681-48.726 35.486-48.726 63.82 0 18.538 7.944 36.544 22.244 49.52-1.325 5.562-2.119 11.123-2.119 16.683 0 37.867 30.719 66.204 66.205 66.204 7.148 0 14.034-1.058 20.919-3.443 11.916 11.653 28.335 19.066 46.343 19.066Z"/></svg>`,
   anthropic: `<svg viewBox="0 0 24 24" role="img" aria-label="Anthropic"><path d="M17.304 3.541h-3.672l6.696 16.918H24Zm-10.608 0L0 20.459h3.744l1.37-3.553h7.005l1.369 3.553h3.744L10.536 3.541Zm-.371 10.223 2.291-5.945 2.292 5.945Z"/></svg>`,
   gemini: `<svg viewBox="0 0 24 24" role="img" aria-label="Google Gemini"><path d="M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81"/></svg>`,
+  compatible: `<svg viewBox="0 0 24 24" role="img" aria-label="兼容服务"><path d="M4 5h9v2H4zm12-2h4v6h-4zM4 11h16v2H4zm7 6h9v2h-9zM4 15h4v6H4z"/></svg>`,
 };
 const AI_PROVIDERS: Array<{
   id: ProviderId;
@@ -134,6 +143,13 @@ const AI_PROVIDERS: Array<{
     model: "gemini-3.5-flash",
     baseUrl:
       "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent",
+  },
+  {
+    id: "compatible",
+    name: "兼容服务",
+    shortName: "兼容服务",
+    model: "",
+    baseUrl: "",
   },
 ];
 
@@ -208,7 +224,586 @@ function renderShortcutKeys(element: HTMLElement, shortcut: string) {
   );
 }
 
+function renderOnboarding(initialReadiness: StartupReadiness) {
+  void invoke("set_main_window_layout", { onboarding: true });
+  document.title = "OpenScreenTranslate · 初始设置";
+  app.className = "onboarding";
+  app.innerHTML = `
+    <div class="onboarding-shell">
+      <aside class="onboarding-sidebar">
+        <img class="onboarding-brand-mark" src="${appIconUrl}" alt="" aria-hidden="true" />
+        <nav class="onboarding-tabs" role="tablist" aria-label="初始化步骤">
+          <button type="button" role="tab" data-step="0" aria-selected="true" aria-controls="onboarding-permission-panel">
+            <span class="onboarding-tab-index">1</span><span>屏幕权限</span>
+          </button>
+          <button type="button" role="tab" data-step="1" aria-selected="false" aria-controls="onboarding-ai-panel" disabled>
+            <span class="onboarding-tab-index">2</span><span>AI 配置</span>
+          </button>
+          <button type="button" role="tab" data-step="2" aria-selected="false" aria-controls="onboarding-preferences-panel" disabled>
+            <span class="onboarding-tab-index">3</span><span>使用偏好</span>
+          </button>
+        </nav>
+      </aside>
+
+      <section class="onboarding-workspace">
+        <div class="onboarding-step-viewport">
+          <main class="onboarding-steps" style="--onboarding-step: 0">
+            <section id="onboarding-permission-panel" class="onboarding-step permission-step" data-state="pending" role="tabpanel" aria-labelledby="permission-step-heading">
+              <div class="onboarding-step-content">
+                <div class="onboarding-step-heading">
+                  <span class="onboarding-step-kicker">屏幕权限</span>
+                  <h2 id="permission-step-heading">允许捕捉屏幕文字</h2>
+                  <p>OpenScreenTranslate 只会在你主动截图时读取所选区域，不会在后台持续录制屏幕。</p>
+                </div>
+                <div class="onboarding-actions">
+                  <button class="primary-button request-permission-button" type="button">授权屏幕录制</button>
+                  <button class="secondary-button open-permission-settings-button" type="button">打开系统设置</button>
+                </div>
+                <div class="onboarding-status permission-message" data-state="pending" role="status" hidden></div>
+              </div>
+            </section>
+
+            <section id="onboarding-ai-panel" class="onboarding-step ai-step" data-state="pending" role="tabpanel" aria-labelledby="ai-step-heading" aria-hidden="true">
+              <div class="onboarding-step-content">
+                <div class="onboarding-step-heading">
+                  <span class="onboarding-step-kicker">AI 翻译</span>
+                  <h2 id="ai-step-heading">连接你的 AI 服务</h2>
+                  <p>选择服务并保存 API Key。Key 只会存入这台 Mac 的系统钥匙串。</p>
+                </div>
+                <form id="onboarding-ai-form" class="onboarding-ai-form">
+                  <fieldset class="provider-fieldset">
+                    <legend>服务供应商</legend>
+                    <div class="provider-picker">
+                      ${AI_PROVIDERS.map(
+                        (provider) => `
+                          <label class="provider-option onboarding-provider-option" data-provider="${provider.id}">
+                            <input type="radio" name="onboardingProvider" value="${provider.id}" />
+                            <span class="provider-symbol" aria-hidden="true">${PROVIDER_ICONS[provider.id]}</span>
+                            <span>${provider.shortName}</span>
+                            <span class="provider-check" aria-hidden="true">✓</span>
+                          </label>
+                        `,
+                      ).join("")}
+                    </div>
+                  </fieldset>
+                  <div class="onboarding-request-fields">
+                    <label class="form-field">
+                      <span>模型</span>
+                      <input class="onboarding-model-input" type="text" autocomplete="off" spellcheck="false" maxlength="160" placeholder="输入模型名称" required />
+                    </label>
+                    <label class="form-field">
+                      <span>完整请求 URL</span>
+                      <input class="onboarding-base-url-input" type="url" autocomplete="off" spellcheck="false" placeholder="https://example.com/v1/chat/completions" required />
+                    </label>
+                  </div>
+                  <div class="onboarding-ai-fields">
+                    <label class="form-field">
+                      <span class="onboarding-api-key-label">API Key</span>
+                      <input class="onboarding-api-key-input" type="password" autocomplete="off" spellcheck="false" />
+                    </label>
+                  </div>
+                  <div class="onboarding-status ai-message" data-state="pending" role="status" hidden></div>
+                </form>
+              </div>
+            </section>
+
+            <section id="onboarding-preferences-panel" class="onboarding-step preferences-step" data-state="optional" role="tabpanel" aria-labelledby="preferences-step-heading" aria-hidden="true">
+              <div class="onboarding-step-content">
+                <div class="onboarding-step-heading">
+                  <span class="onboarding-step-kicker">使用偏好</span>
+                  <h2 id="preferences-step-heading">设置你的使用方式</h2>
+                  <p>确认快捷键与登录启动设置，之后也可以随时在设置中修改。</p>
+                </div>
+                <div class="onboarding-preferences">
+                  <label class="toggle-setting onboarding-language-setting">
+                    <span class="toggle-copy"><strong>默认翻译为</strong><small>截图和手动翻译默认使用的目标语言</small></span>
+                    <span class="form-field select-field onboarding-language-control">
+                      <select class="onboarding-target-language">${languageOptions()}</select>
+                    </span>
+                  </label>
+                  <div class="onboarding-preference-row">
+                    <span class="onboarding-preference-copy"><strong>截图并翻译</strong></span>
+                    <span class="shortcut-display onboarding-capture-shortcut-display"><span class="shortcut-keys onboarding-capture-shortcut-keys"><kbd>⌘</kbd><kbd>1</kbd></span></span>
+                    <button class="shortcut-edit-button onboarding-capture-shortcut-button" type="button" disabled>修改</button>
+                    <small class="onboarding-shortcut-status onboarding-capture-shortcut-status"></small>
+                  </div>
+                  <div class="onboarding-preference-row">
+                    <span class="onboarding-preference-copy"><strong>翻译</strong></span>
+                    <span class="shortcut-display onboarding-translation-shortcut-display"><span class="shortcut-keys onboarding-translation-shortcut-keys"><kbd>⌘</kbd><kbd>2</kbd></span></span>
+                    <button class="shortcut-edit-button onboarding-translation-shortcut-button" type="button" disabled>修改</button>
+                    <small class="onboarding-shortcut-status onboarding-translation-shortcut-status"></small>
+                  </div>
+                  <label class="toggle-setting onboarding-autostart-setting">
+                    <span class="toggle-copy"><strong>登录时自动启动</strong><small>登录 macOS 后自动在菜单栏运行</small></span>
+                    <span class="switch-control">
+                      <input class="onboarding-autostart-toggle" type="checkbox" role="switch" disabled />
+                      <span class="switch-track" aria-hidden="true"></span>
+                    </span>
+                  </label>
+                  <div class="onboarding-status onboarding-autostart-status" data-state="pending" role="status"></div>
+                </div>
+              </div>
+            </section>
+          </main>
+        </div>
+
+        <footer class="onboarding-footer" hidden>
+          <span class="onboarding-completion-message" role="status" hidden></span>
+          <button class="primary-button save-ai-button" type="submit" form="onboarding-ai-form" hidden>保存 AI 配置</button>
+          <button class="primary-button complete-onboarding-button" type="button" disabled>开始使用</button>
+        </footer>
+      </section>
+    </div>
+  `;
+
+  const permissionStep = requireElement<HTMLElement>(".permission-step");
+  const permissionMessage = requireElement<HTMLDivElement>(".permission-message");
+  const requestPermissionButton = requireElement<HTMLButtonElement>(".request-permission-button");
+  const openPermissionSettingsButton = requireElement<HTMLButtonElement>(".open-permission-settings-button");
+  const aiStep = requireElement<HTMLElement>(".ai-step");
+  const preferencesStep = requireElement<HTMLElement>(".preferences-step");
+  const stepViewport = requireElement<HTMLElement>(".onboarding-step-viewport");
+  const stepsTrack = requireElement<HTMLElement>(".onboarding-steps");
+  const tabButtons = Array.from(
+    document.querySelectorAll<HTMLButtonElement>(".onboarding-tabs [role='tab']"),
+  );
+  const stepPanels = [permissionStep, aiStep, preferencesStep];
+  const aiForm = requireElement<HTMLFormElement>(".onboarding-ai-form");
+  const aiMessage = requireElement<HTMLDivElement>(".ai-message");
+  const apiKeyLabel = requireElement<HTMLSpanElement>(".onboarding-api-key-label");
+  const apiKeyInput = requireElement<HTMLInputElement>(".onboarding-api-key-input");
+  const onboardingModelInput = requireElement<HTMLInputElement>(".onboarding-model-input");
+  const onboardingBaseUrlInput = requireElement<HTMLInputElement>(".onboarding-base-url-input");
+  const targetLanguage = requireElement<HTMLSelectElement>(".onboarding-target-language");
+  const saveAiButton = requireElement<HTMLButtonElement>(".save-ai-button");
+  const providerInputs = Array.from(
+    document.querySelectorAll<HTMLInputElement>('input[name="onboardingProvider"]'),
+  );
+  const completionMessage = requireElement<HTMLSpanElement>(".onboarding-completion-message");
+  const completeButton = requireElement<HTMLButtonElement>(".complete-onboarding-button");
+  const onboardingFooter = requireElement<HTMLElement>(".onboarding-footer");
+  const autostartToggle = requireElement<HTMLInputElement>(".onboarding-autostart-toggle");
+  const autostartStatus = requireElement<HTMLDivElement>(".onboarding-autostart-status");
+
+  let readiness = initialReadiness;
+  let selectedProvider = initialReadiness.provider;
+  let configuredProviders = new Set<ProviderId>();
+  const providerConfigs = defaultProviderConfigs();
+  let aiDirty = false;
+  const dirtyProviderConfigs = new Set<ProviderId>();
+  let translationSettingsLoaded = false;
+  let currentStep = !initialReadiness.screenCapturePermissionGranted
+    ? 0
+    : initialReadiness.apiKeyConfigured
+      ? 2
+      : 1;
+
+  const syncActiveStepHeight = () => {
+    stepViewport.style.height = `${stepPanels[currentStep].scrollHeight}px`;
+  };
+
+  const stepResizeObserver = new ResizeObserver(() => syncActiveStepHeight());
+  for (const panel of stepPanels) stepResizeObserver.observe(panel);
+
+  const aiConfigurationReady = () =>
+    !aiDirty &&
+    (configuredProviders.has(selectedProvider) ||
+      (!translationSettingsLoaded &&
+        selectedProvider === readiness.provider &&
+        readiness.apiKeyConfigured));
+
+  const setActiveStep = (requestedStep: number) => {
+    const maximumStep = !readiness.screenCapturePermissionGranted
+      ? 0
+      : aiConfigurationReady()
+        ? 2
+        : 1;
+    currentStep = Math.max(0, Math.min(requestedStep, maximumStep));
+    stepsTrack.style.setProperty("--onboarding-step", String(currentStep));
+    onboardingFooter.hidden = currentStep === 0;
+    saveAiButton.hidden = currentStep !== 1;
+    completeButton.hidden = currentStep !== 2;
+    if (currentStep !== 2) completionMessage.hidden = true;
+
+    for (const [index, tab] of tabButtons.entries()) {
+      const selected = index === currentStep;
+      tab.disabled = index > maximumStep;
+      tab.setAttribute("aria-selected", String(selected));
+      tab.dataset.state =
+        index === 0 && readiness.screenCapturePermissionGranted
+          ? "ready"
+          : index === 1 && aiConfigurationReady()
+            ? "ready"
+            : selected
+              ? "active"
+              : "pending";
+      stepPanels[index].setAttribute("aria-hidden", String(!selected));
+      stepPanels[index].inert = !selected;
+    }
+    requestAnimationFrame(syncActiveStepHeight);
+  };
+
+  for (const tab of tabButtons) {
+    tab.addEventListener("click", () => setActiveStep(Number(tab.dataset.step)));
+  }
+
+  const refreshAiDirtyState = () => {
+    aiDirty =
+      selectedProvider !== readiness.provider ||
+      apiKeyInput.value.trim().length > 0 ||
+      dirtyProviderConfigs.has(selectedProvider);
+  };
+
+  const setMessage = (
+    element: HTMLElement,
+    message: string,
+    state: "ready" | "pending" | "error",
+  ) => {
+    element.textContent = message;
+    element.dataset.state = state;
+    element.hidden = false;
+  };
+
+  const updateCompletion = () => {
+    const permissionReady = readiness.screenCapturePermissionGranted;
+    const aiReady = aiConfigurationReady();
+
+    permissionStep.dataset.state = permissionReady ? "ready" : "pending";
+    requestPermissionButton.hidden = permissionReady;
+    openPermissionSettingsButton.hidden = permissionReady;
+
+    aiStep.dataset.state = aiReady ? "ready" : "pending";
+    completeButton.disabled = !permissionReady || !aiReady;
+    setActiveStep(currentStep);
+  };
+
+  const updatePermissionView = () => {
+    if (readiness.screenCapturePermissionGranted) {
+      permissionMessage.textContent = "";
+      permissionMessage.dataset.state = "ready";
+      permissionMessage.hidden = true;
+    }
+    updateCompletion();
+    if (readiness.screenCapturePermissionGranted && currentStep === 0) {
+      setActiveStep(aiConfigurationReady() ? 2 : 1);
+    }
+  };
+
+  const refreshReadiness = async () => {
+    readiness = await invoke<StartupReadiness>("get_startup_readiness");
+    updatePermissionView();
+  };
+
+  requestPermissionButton.addEventListener("click", async () => {
+    requestPermissionButton.disabled = true;
+    setMessage(permissionMessage, "正在请求屏幕录制权限…", "pending");
+    try {
+      const granted = await invoke<boolean>("request_screen_capture_permission");
+      readiness.screenCapturePermissionGranted = granted;
+      updatePermissionView();
+      if (!granted) {
+        setMessage(
+          permissionMessage,
+          "请在系统提示中允许；如果已经拒绝，请打开系统设置后重新检测。",
+          "pending",
+        );
+      }
+    } catch (error) {
+      setMessage(permissionMessage, `请求权限失败：${String(error)}`, "error");
+    } finally {
+      requestPermissionButton.disabled = false;
+    }
+  });
+
+  openPermissionSettingsButton.addEventListener("click", async () => {
+    try {
+      await invoke("open_screen_capture_settings");
+      setMessage(permissionMessage, "授权后返回此处并重新检测；部分系统版本需要重新打开应用。", "pending");
+    } catch (error) {
+      setMessage(permissionMessage, `无法打开系统设置：${String(error)}`, "error");
+    }
+  });
+
+  window.addEventListener("focus", () => void refreshReadiness().catch(() => undefined));
+
+  const storeProviderDraft = () => {
+    providerConfigs[selectedProvider] = {
+      model: onboardingModelInput.value,
+      baseUrl: onboardingBaseUrlInput.value,
+    };
+  };
+
+  const updateProviderView = () => {
+    const provider = providerMetadata(selectedProvider);
+    const requestConfig = providerConfigs[selectedProvider];
+    const providerHasKey =
+      configuredProviders.has(selectedProvider) ||
+      (!translationSettingsLoaded &&
+        selectedProvider === readiness.provider &&
+        readiness.apiKeyConfigured);
+    for (const input of providerInputs) {
+      const inputProvider = input.value as ProviderId;
+      input.checked = inputProvider === selectedProvider;
+      input.closest(".provider-option")?.classList.toggle(
+        "has-key",
+        configuredProviders.has(inputProvider),
+      );
+    }
+    apiKeyLabel.textContent = `${provider.name} API Key`;
+    apiKeyInput.value = "";
+    apiKeyInput.placeholder = providerHasKey
+      ? `${provider.name} API Key 已保存在钥匙串，可留空`
+      : `输入 ${provider.name} API Key`;
+    onboardingModelInput.value = requestConfig.model;
+    onboardingModelInput.placeholder = provider.model || "输入模型名称";
+    onboardingBaseUrlInput.value = requestConfig.baseUrl;
+    onboardingBaseUrlInput.placeholder =
+      provider.baseUrl || "https://example.com/v1/chat/completions";
+    aiMessage.textContent = "";
+    aiMessage.hidden = true;
+    updateCompletion();
+  };
+
+  for (const input of providerInputs) {
+    input.addEventListener("change", () => {
+      if (!input.checked) return;
+      storeProviderDraft();
+      selectedProvider = input.value as ProviderId;
+      refreshAiDirtyState();
+      updateProviderView();
+    });
+  }
+  apiKeyInput.addEventListener("input", () => {
+    refreshAiDirtyState();
+    aiMessage.hidden = true;
+    updateCompletion();
+  });
+  for (const input of [onboardingModelInput, onboardingBaseUrlInput]) {
+    input.addEventListener("input", () => {
+      dirtyProviderConfigs.add(selectedProvider);
+      storeProviderDraft();
+      refreshAiDirtyState();
+      aiMessage.hidden = true;
+      updateCompletion();
+    });
+  }
+
+  void invoke<TranslationSettings>("get_translation_settings")
+    .then((settings) => {
+      selectedProvider = settings.provider;
+      readiness.provider = settings.provider;
+      configuredProviders = new Set(settings.configuredProviders);
+      translationSettingsLoaded = true;
+      for (const provider of AI_PROVIDERS) {
+        const config = settings.providerConfigs?.[provider.id];
+        if (config) providerConfigs[provider.id] = { ...config };
+      }
+      targetLanguage.value = settings.targetLanguage;
+      dirtyProviderConfigs.clear();
+      aiDirty = false;
+      updateProviderView();
+    })
+    .catch((error) => setMessage(aiMessage, `读取 AI 配置失败：${String(error)}`, "error"));
+
+  aiForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    storeProviderDraft();
+    if (!onboardingModelInput.checkValidity() || !onboardingBaseUrlInput.checkValidity()) {
+      setMessage(aiMessage, "请填写有效的模型和完整请求 URL", "error");
+      return;
+    }
+    const apiKey = apiKeyInput.value.trim();
+    if (!apiKey && !configuredProviders.has(selectedProvider)) {
+      setMessage(aiMessage, `请输入 ${providerMetadata(selectedProvider).name} API Key`, "error");
+      apiKeyInput.focus();
+      return;
+    }
+
+    saveAiButton.disabled = true;
+    setMessage(aiMessage, "正在保存 AI 配置…", "pending");
+    try {
+      if (apiKey) {
+        await invoke("save_provider_api_key", { provider: selectedProvider, apiKey });
+        configuredProviders.add(selectedProvider);
+      }
+      const requestConfig = providerConfigs[selectedProvider];
+      await invoke("save_translation_settings", {
+        settings: {
+          targetLanguage: targetLanguage.value,
+          provider: selectedProvider,
+          model: requestConfig.model,
+          baseUrl: requestConfig.baseUrl,
+        },
+      });
+      readiness = await invoke<StartupReadiness>("get_startup_readiness");
+      dirtyProviderConfigs.delete(selectedProvider);
+      aiDirty = false;
+      configuredProviders.add(selectedProvider);
+      updateProviderView();
+      setMessage(aiMessage, "AI 翻译配置已保存", "ready");
+      setActiveStep(2);
+    } catch (error) {
+      setMessage(aiMessage, `保存失败：${String(error)}`, "error");
+    } finally {
+      saveAiButton.disabled = false;
+    }
+  });
+
+  type OnboardingShortcutEditor = {
+    currentShortcut: string;
+    display: HTMLSpanElement;
+    keys: HTMLSpanElement;
+    button: HTMLButtonElement;
+    status: HTMLElement;
+    getCommand: string;
+    setCommand: string;
+  };
+  const shortcutEditors: OnboardingShortcutEditor[] = [
+    {
+      currentShortcut: DEFAULT_CAPTURE_SHORTCUT,
+      display: requireElement<HTMLSpanElement>(".onboarding-capture-shortcut-display"),
+      keys: requireElement<HTMLSpanElement>(".onboarding-capture-shortcut-keys"),
+      button: requireElement<HTMLButtonElement>(".onboarding-capture-shortcut-button"),
+      status: requireElement<HTMLElement>(".onboarding-capture-shortcut-status"),
+      getCommand: "get_capture_shortcut",
+      setCommand: "set_capture_shortcut",
+    },
+    {
+      currentShortcut: DEFAULT_TRANSLATION_SHORTCUT,
+      display: requireElement<HTMLSpanElement>(".onboarding-translation-shortcut-display"),
+      keys: requireElement<HTMLSpanElement>(".onboarding-translation-shortcut-keys"),
+      button: requireElement<HTMLButtonElement>(".onboarding-translation-shortcut-button"),
+      status: requireElement<HTMLElement>(".onboarding-translation-shortcut-status"),
+      getCommand: "get_translation_shortcut",
+      setCommand: "set_translation_shortcut",
+    },
+  ];
+  let activeShortcutEditor: OnboardingShortcutEditor | null = null;
+
+  const applyShortcutStatus = (editor: OnboardingShortcutEditor, status: ShortcutStatus) => {
+    editor.currentShortcut = status.shortcut;
+    renderShortcutKeys(editor.keys, status.shortcut);
+    editor.button.disabled = false;
+    setMessage(
+      editor.status,
+      status.registered ? "快捷键可用" : status.error ?? "快捷键不可用",
+      status.registered ? "ready" : "error",
+    );
+  };
+
+  const saveShortcut = async (editor: OnboardingShortcutEditor, shortcut: string) => {
+    activeShortcutEditor = null;
+    editor.display.classList.remove("is-recording");
+    editor.button.disabled = true;
+    setMessage(editor.status, "正在注册…", "pending");
+    try {
+      applyShortcutStatus(
+        editor,
+        await invoke<ShortcutStatus>(editor.setCommand, { shortcut }),
+      );
+    } catch (error) {
+      renderShortcutKeys(editor.keys, editor.currentShortcut);
+      editor.button.disabled = false;
+      setMessage(editor.status, String(error), "error");
+    }
+  };
+
+  for (const editor of shortcutEditors) {
+    void invoke<ShortcutStatus>(editor.getCommand)
+      .then((status) => applyShortcutStatus(editor, status))
+      .catch((error) => setMessage(editor.status, `读取失败：${String(error)}`, "error"));
+    editor.button.addEventListener("click", () => {
+      if (activeShortcutEditor && activeShortcutEditor !== editor) {
+        activeShortcutEditor.display.classList.remove("is-recording");
+        renderShortcutKeys(activeShortcutEditor.keys, activeShortcutEditor.currentShortcut);
+      }
+      activeShortcutEditor = editor;
+      editor.display.classList.add("is-recording");
+      editor.keys.replaceChildren(document.createTextNode("请按组合键"));
+      setMessage(editor.status, "按 Esc 取消；需包含 ⌘、⌃ 或 ⌥", "pending");
+    });
+  }
+
+  window.addEventListener("keydown", (event) => {
+    const editor = activeShortcutEditor;
+    if (!editor) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.code === "Escape" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      activeShortcutEditor = null;
+      editor.display.classList.remove("is-recording");
+      renderShortcutKeys(editor.keys, editor.currentShortcut);
+      setMessage(editor.status, "已取消修改", "ready");
+      return;
+    }
+    if (["MetaLeft", "MetaRight", "ControlLeft", "ControlRight", "AltLeft", "AltRight", "ShiftLeft", "ShiftRight"].includes(event.code)) return;
+    if (!event.metaKey && !event.ctrlKey && !event.altKey) {
+      setMessage(editor.status, "快捷键必须包含 ⌘、⌃ 或 ⌥", "error");
+      return;
+    }
+    const modifiers = [
+      event.metaKey ? "Command" : "",
+      event.ctrlKey ? "Control" : "",
+      event.altKey ? "Option" : "",
+      event.shiftKey ? "Shift" : "",
+    ].filter(Boolean);
+    void saveShortcut(editor, [...modifiers, event.code].join("+"));
+  });
+
+  void invoke<boolean>("get_launch_at_login")
+    .then((enabled) => {
+      autostartToggle.checked = enabled;
+      autostartToggle.disabled = false;
+      setMessage(autostartStatus, enabled ? "已开启登录时自动启动" : "已关闭登录时自动启动", "ready");
+    })
+    .catch((error) => setMessage(autostartStatus, `读取启动设置失败：${String(error)}`, "error"));
+
+  autostartToggle.addEventListener("change", async () => {
+    const enabled = autostartToggle.checked;
+    autostartToggle.disabled = true;
+    setMessage(autostartStatus, "正在保存…", "pending");
+    try {
+      await invoke("set_launch_at_login", { enabled });
+      setMessage(autostartStatus, enabled ? "已开启登录时自动启动" : "已关闭登录时自动启动", "ready");
+    } catch (error) {
+      autostartToggle.checked = !enabled;
+      setMessage(autostartStatus, `保存失败：${String(error)}`, "error");
+    } finally {
+      autostartToggle.disabled = false;
+    }
+  });
+
+  completeButton.addEventListener("click", async () => {
+    completeButton.disabled = true;
+    completeButton.textContent = "正在完成…";
+    completionMessage.hidden = true;
+    try {
+      const requestConfig = providerConfigs[selectedProvider];
+      await invoke("save_translation_settings", {
+        settings: {
+          targetLanguage: targetLanguage.value,
+          provider: selectedProvider,
+          model: requestConfig.model,
+          baseUrl: requestConfig.baseUrl,
+        },
+      });
+      await invoke("complete_onboarding");
+      renderSettings();
+    } catch (error) {
+      completionMessage.textContent = `无法完成：${String(error)}`;
+      completionMessage.hidden = false;
+      completeButton.textContent = "开始使用";
+      updateCompletion();
+    }
+  });
+
+  updatePermissionView();
+  updateProviderView();
+  setActiveStep(currentStep);
+}
+
 function renderSettings() {
+  void invoke("set_main_window_layout", { onboarding: false });
   document.title = "OpenScreenTranslate 设置";
   app.className = "settings";
   app.innerHTML = `
@@ -329,7 +924,7 @@ function renderSettings() {
               />
             </label>
             <label class="form-field">
-              <span>请求 URL</span>
+              <span>完整请求 URL</span>
               <input
                 class="base-url-input"
                 type="url"
@@ -633,8 +1228,9 @@ function renderSettings() {
     const requestConfig = providerConfigs[provider];
     modelInputElement.value = requestConfig.model;
     baseUrlInputElement.value = requestConfig.baseUrl;
-    modelInputElement.placeholder = metadata.model;
-    baseUrlInputElement.placeholder = metadata.baseUrl;
+    modelInputElement.placeholder = metadata.model || "输入模型名称";
+    baseUrlInputElement.placeholder =
+      metadata.baseUrl || "https://example.com/v1/chat/completions";
     updateRequestConfigPreview();
     apiKeyLabelElement.textContent = `${metadata.name} API Key`;
     for (const input of providerInputs) {
@@ -1217,10 +1813,27 @@ const view = new URLSearchParams(window.location.search).get("view");
 
 if (view === "capture") {
   renderCaptureOverlay();
+  document.documentElement.dataset.ready = "true";
 } else if (view === "result") {
   renderResult();
+  document.documentElement.dataset.ready = "true";
 } else {
-  renderSettings();
+  app.className = "startup-loading";
+  app.innerHTML = `<div class="startup-loading-indicator" role="status">正在检查初始化状态…</div>`;
+  void invoke<StartupReadiness>("get_startup_readiness")
+    .then((readiness) => {
+      if (
+        !readiness.onboardingCompleted ||
+        !readiness.screenCapturePermissionGranted ||
+        !readiness.apiKeyConfigured
+      ) {
+        renderOnboarding(readiness);
+      } else {
+        renderSettings();
+      }
+    })
+    .catch(() => renderSettings())
+    .finally(() => {
+      document.documentElement.dataset.ready = "true";
+    });
 }
-
-document.documentElement.dataset.ready = "true";

@@ -14,7 +14,7 @@ use std::{
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::TrayIconBuilder,
-    Emitter, Manager, Monitor, PhysicalPosition, State, WindowEvent,
+    Emitter, LogicalSize, Manager, Monitor, PhysicalPosition, State, WindowEvent,
 };
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt as AutostartManagerExt};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
@@ -58,6 +58,8 @@ fn truncate_source_text(value: String) -> String {
 #[serde(rename_all = "camelCase")]
 struct AppSettings {
     target_language: String,
+    #[serde(default = "legacy_onboarding_completed")]
+    onboarding_completed: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     launch_at_login: Option<bool>,
     #[serde(default, skip_serializing)]
@@ -101,10 +103,17 @@ fn default_provider_request_configs() -> BTreeMap<String, translation::ProviderR
         .collect()
 }
 
+// Settings written before onboarding existed belong to users who already configured the app.
+// Fresh installs use AppSettings::default(), which explicitly starts incomplete.
+fn legacy_onboarding_completed() -> bool {
+    true
+}
+
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
             target_language: "zh-CN".to_string(),
+            onboarding_completed: false,
             launch_at_login: Some(false),
             api_key_configured: false,
             configured_providers: Vec::new(),
@@ -135,6 +144,15 @@ struct TranslationSettingsSnapshot {
     provider_configs: BTreeMap<String, translation::ProviderRequestConfig>,
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StartupReadiness {
+    screen_capture_permission_granted: bool,
+    api_key_configured: bool,
+    onboarding_completed: bool,
+    provider: String,
+}
+
 #[derive(Default)]
 struct SettingsState(Mutex<AppSettings>);
 
@@ -145,7 +163,7 @@ struct ShortcutRuntimeState(Mutex<ShortcutRegistration>);
 struct TranslationShortcutRuntimeState(Mutex<ShortcutRegistration>);
 
 #[derive(Default)]
-struct FirstLaunchState(AtomicBool);
+struct StartupWindowState(AtomicBool);
 
 #[derive(Default)]
 struct ShortcutRegistration {
@@ -230,16 +248,16 @@ fn settings_file_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
         .map_err(|error| format!("无法确定设置文件位置：{error}"))
 }
 
-fn should_show_settings_on_launch(settings_file_exists: bool) -> bool {
-    !settings_file_exists
+fn should_show_onboarding_on_launch(
+    onboarding_completed: bool,
+    screen_capture_permission_granted: bool,
+    api_key_configured: bool,
+) -> bool {
+    !onboarding_completed || !screen_capture_permission_granted || !api_key_configured
 }
 
 fn desired_launch_at_login(saved_value: Option<bool>) -> bool {
     saved_value.unwrap_or(false)
-}
-
-fn should_request_screen_capture_permission(permission_granted: bool) -> bool {
-    !permission_granted
 }
 
 fn load_app_settings(app: &tauri::AppHandle) -> Result<AppSettings, String> {
@@ -544,19 +562,6 @@ fn apply_launch_at_login(app: &tauri::AppHandle, enabled: bool) -> Result<(), St
     }
 }
 
-#[cfg(target_os = "macos")]
-fn request_screen_capture_permission_on_launch(app: &tauri::AppHandle) {
-    let permission_granted = macos_capture::has_permission();
-    if !should_request_screen_capture_permission(permission_granted) {
-        return;
-    }
-
-    app.state::<CaptureState>()
-        .permission_prompt_requested
-        .store(true, Ordering::Release);
-    let _ = macos_capture::request_permission();
-}
-
 fn show_settings(app: &tauri::AppHandle) {
     let Some(window) = app.get_webview_window(SETTINGS_WINDOW_LABEL) else {
         eprintln!("settings window is not available");
@@ -572,6 +577,25 @@ fn show_settings(app: &tauri::AppHandle) {
     if let Err(error) = window.set_focus() {
         eprintln!("failed to focus settings window: {error}");
     }
+}
+
+#[tauri::command]
+fn set_main_window_layout(app: tauri::AppHandle, onboarding: bool) -> Result<(), String> {
+    let window = app
+        .get_webview_window(SETTINGS_WINDOW_LABEL)
+        .ok_or_else(|| "设置窗口不可用".to_string())?;
+    let (width, height) = if onboarding {
+        (780.0, 540.0)
+    } else {
+        (560.0, 640.0)
+    };
+
+    window
+        .set_size(LogicalSize::new(width, height))
+        .map_err(|error| format!("无法调整窗口大小：{error}"))?;
+    window
+        .center()
+        .map_err(|error| format!("无法居中窗口：{error}"))
 }
 
 fn distance_squared_to_monitor(cursor: PhysicalPosition<f64>, monitor: &Monitor) -> f64 {
@@ -1156,9 +1180,99 @@ fn screen_capture_permission_granted() -> bool {
 }
 
 #[tauri::command]
+fn request_screen_capture_permission(app: tauri::AppHandle) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        app.state::<CaptureState>()
+            .permission_prompt_requested
+            .store(true, Ordering::Release);
+        let _ = macos_capture::request_permission();
+        macos_capture::has_permission()
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        false
+    }
+}
+
+#[tauri::command]
+fn open_screen_capture_settings() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        macos_capture::open_permission_settings()
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err("当前版本只支持 macOS 屏幕录制权限设置".to_string())
+    }
+}
+
+fn configured_providers_from_credentials() -> Result<Vec<String>, String> {
+    translation::SUPPORTED_PROVIDERS
+        .into_iter()
+        .filter_map(|provider| match credential_store::read_api_key(provider) {
+            Ok(Some(_)) => Some(Ok(provider.to_string())),
+            Ok(None) => None,
+            Err(error) => Some(Err(error)),
+        })
+        .collect()
+}
+
+fn startup_readiness(state: &SettingsState) -> Result<StartupReadiness, String> {
+    let settings = state.0.lock().map_err(|_| "设置状态锁已损坏".to_string())?;
+    let provider = settings.translation_provider.clone();
+    let onboarding_completed = settings.onboarding_completed;
+    drop(settings);
+
+    let api_key_configured = credential_store::read_api_key(&provider)?.is_some();
+    Ok(StartupReadiness {
+        screen_capture_permission_granted: screen_capture_permission_granted(),
+        api_key_configured,
+        onboarding_completed,
+        provider,
+    })
+}
+
+#[tauri::command]
+fn get_startup_readiness(state: State<'_, SettingsState>) -> Result<StartupReadiness, String> {
+    startup_readiness(&state)
+}
+
+#[tauri::command]
+fn complete_onboarding(
+    app: tauri::AppHandle,
+    state: State<'_, SettingsState>,
+) -> Result<(), String> {
+    let readiness = startup_readiness(&state)?;
+    if !readiness.screen_capture_permission_granted {
+        return Err("请先授予屏幕录制权限".to_string());
+    }
+    if !readiness.api_key_configured {
+        return Err("请先配置当前 AI 服务的 API Key".to_string());
+    }
+
+    let mut current_settings = state.0.lock().map_err(|_| "设置状态锁已损坏".to_string())?;
+    let mut settings = current_settings.clone();
+    settings.onboarding_completed = true;
+    persist_app_settings(&app, &settings)?;
+    *current_settings = settings;
+
+    if let Some(window) = app.get_webview_window(SETTINGS_WINDOW_LABEL) {
+        if let Err(error) = window.hide() {
+            eprintln!("failed to hide completed onboarding window: {error}");
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn get_translation_settings(
     state: State<'_, SettingsState>,
 ) -> Result<TranslationSettingsSnapshot, String> {
+    let configured_providers = configured_providers_from_credentials()?;
     state
         .0
         .lock()
@@ -1166,7 +1280,7 @@ fn get_translation_settings(
         .map(|settings| TranslationSettingsSnapshot {
             target_language: settings.target_language.clone(),
             provider: settings.translation_provider.clone(),
-            configured_providers: settings.configured_providers.clone(),
+            configured_providers,
             provider_configs: settings.provider_request_configs.clone(),
         })
 }
@@ -1648,31 +1762,36 @@ pub fn run() {
         .manage(SettingsState::default())
         .manage(ShortcutRuntimeState::default())
         .manage(TranslationShortcutRuntimeState::default())
-        .manage(FirstLaunchState::default())
+        .manage(StartupWindowState::default())
         .invoke_handler(tauri::generate_handler![
             cancel_selection,
+            complete_onboarding,
             complete_selection,
             copy_text_to_clipboard,
             delete_provider_api_key,
             get_capture_shortcut,
             get_ocr_text,
+            get_startup_readiness,
             get_translation_shortcut,
             get_translation_result,
             get_translation_settings,
             get_launch_at_login,
             log_capture_viewport,
+            open_screen_capture_settings,
             open_manual_translation,
             retranslate,
+            request_screen_capture_permission,
             save_provider_api_key,
             save_translation_settings,
             set_capture_shortcut,
             set_launch_at_login,
+            set_main_window_layout,
             set_translation_shortcut,
             screen_capture_permission_granted
         ])
         .setup(|app| {
             let is_first_launch = match settings_file_path(app.handle()) {
-                Ok(path) => should_show_settings_on_launch(path.exists()),
+                Ok(path) => !path.exists(),
                 Err(error) => {
                     eprintln!("failed to determine whether this is the first launch: {error}");
                     false
@@ -1701,7 +1820,7 @@ pub fn run() {
                 Err(error) => eprintln!("failed to read saved autostart setting: {error}"),
             }
 
-            // The settings file also acts as the first-launch marker.
+            // Persist defaults on first launch and initialize older autostart settings.
             if is_first_launch || launch_at_login_was_missing {
                 if let Err(error) = persist_app_settings(app.handle(), &settings) {
                     eprintln!("failed to persist first-launch settings: {error}");
@@ -1710,6 +1829,18 @@ pub fn run() {
 
             let capture_shortcut = settings.capture_shortcut.clone();
             let translation_shortcut = settings.translation_shortcut.clone();
+            let screen_capture_permission_granted = screen_capture_permission_granted();
+            let api_key_configured = credential_store::read_api_key(&settings.translation_provider)
+                .map(|key| key.is_some())
+                .unwrap_or_else(|error| {
+                    eprintln!("failed to read the selected provider credential: {error}");
+                    false
+                });
+            let show_onboarding = should_show_onboarding_on_launch(
+                settings.onboarding_completed,
+                screen_capture_permission_granted,
+                api_key_configured,
+            );
             *app.state::<SettingsState>()
                 .0
                 .lock()
@@ -1762,9 +1893,9 @@ pub fn run() {
                 }
             }
 
-            app.state::<FirstLaunchState>()
+            app.state::<StartupWindowState>()
                 .0
-                .store(is_first_launch, Ordering::Release);
+                .store(show_onboarding, Ordering::Release);
 
             Ok(())
         })
@@ -1795,15 +1926,13 @@ pub fn run() {
 
     app.run(|app_handle, event| {
         if matches!(event, tauri::RunEvent::Ready) {
-            let is_first_launch = app_handle
-                .state::<FirstLaunchState>()
+            let show_onboarding = app_handle
+                .state::<StartupWindowState>()
                 .0
                 .swap(false, Ordering::AcqRel);
-            if is_first_launch {
+            if show_onboarding {
                 show_settings(app_handle);
             }
-            #[cfg(target_os = "macos")]
-            request_screen_capture_permission_on_launch(app_handle);
         }
     });
 }
@@ -1812,29 +1941,25 @@ pub fn run() {
 mod tests {
     use super::{
         desired_launch_at_login, manual_translation_result, normalize_app_settings,
-        normalize_capture_shortcut, selection_to_pixel_rect,
-        should_request_screen_capture_permission, should_show_settings_on_launch,
+        normalize_capture_shortcut, selection_to_pixel_rect, should_show_onboarding_on_launch,
         source_text_utf16_len, truncate_source_text, AppSettings, CaptureSelection,
         DEFAULT_CAPTURE_SHORTCUT, DEFAULT_TRANSLATION_SHORTCUT, MAX_SOURCE_TEXT_UTF16_UNITS,
     };
 
     #[test]
-    fn settings_are_only_shown_when_no_settings_file_exists() {
-        assert!(should_show_settings_on_launch(false));
-        assert!(!should_show_settings_on_launch(true));
+    fn onboarding_is_shown_until_every_required_condition_is_ready() {
+        assert!(should_show_onboarding_on_launch(false, true, true));
+        assert!(should_show_onboarding_on_launch(true, false, true));
+        assert!(should_show_onboarding_on_launch(true, true, false));
+        assert!(!should_show_onboarding_on_launch(true, true, true));
     }
 
     #[test]
     fn new_install_defaults_disable_launch_at_login() {
+        assert!(!AppSettings::default().onboarding_completed);
         assert_eq!(AppSettings::default().launch_at_login, Some(false));
         assert!(!desired_launch_at_login(None));
         assert!(desired_launch_at_login(Some(true)));
-    }
-
-    #[test]
-    fn screen_capture_permission_is_requested_on_launch_when_missing() {
-        assert!(should_request_screen_capture_permission(false));
-        assert!(!should_request_screen_capture_permission(true));
     }
 
     #[test]
@@ -1867,6 +1992,7 @@ mod tests {
             serde_json::from_str(r#"{"targetLanguage":"en"}"#).expect("settings should parse");
 
         assert_eq!(settings.target_language, "en");
+        assert!(settings.onboarding_completed);
         assert_eq!(settings.launch_at_login, None);
         assert!(!settings.api_key_configured);
         assert_eq!(settings.capture_shortcut, DEFAULT_CAPTURE_SHORTCUT);
@@ -1931,7 +2057,7 @@ mod tests {
         assert_eq!(settings.translation_provider, "deepseek");
         assert_eq!(settings.configured_providers, vec!["deepseek"]);
         assert!(!settings.api_key_configured);
-        assert_eq!(settings.provider_request_configs.len(), 4);
+        assert_eq!(settings.provider_request_configs.len(), 5);
         assert!(settings.request_urls_are_complete);
     }
 
@@ -1952,7 +2078,7 @@ mod tests {
         .expect("custom request config should parse");
         let settings = normalize_app_settings(settings);
 
-        assert_eq!(settings.provider_request_configs.len(), 4);
+        assert_eq!(settings.provider_request_configs.len(), 5);
         let openai = settings
             .provider_request_configs
             .get("openai")
@@ -1961,6 +2087,34 @@ mod tests {
         assert_eq!(
             openai.base_url,
             "https://gateway.example.com/openai/v1/responses"
+        );
+    }
+
+    #[test]
+    fn compatible_service_config_survives_normalization() {
+        let settings: AppSettings = serde_json::from_str(
+            r#"{
+                "targetLanguage":"zh-CN",
+                "translationProvider":"compatible",
+                "providerRequestConfigs": {
+                    "compatible": {
+                        "model":"vendor/model-fast",
+                        "baseUrl":"https://gateway.example.com/v1/chat/completions"
+                    }
+                }
+            }"#,
+        )
+        .expect("compatible service config should parse");
+        let settings = normalize_app_settings(settings);
+
+        assert_eq!(settings.translation_provider, "compatible");
+        assert_eq!(
+            settings.provider_request_configs["compatible"].model,
+            "vendor/model-fast"
+        );
+        assert_eq!(
+            settings.provider_request_configs["compatible"].base_url,
+            "https://gateway.example.com/v1/chat/completions"
         );
     }
 

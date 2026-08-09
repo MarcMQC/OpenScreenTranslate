@@ -15,16 +15,16 @@ the AI service you select.
 - Recognize multilingual text locally with Apple Vision
 - Edit recognized text to correct OCR errors and translate again
 - Open the manual translation window with a separate global shortcut
-- Support DeepSeek, OpenAI, Anthropic Claude, and Google Gemini
-- Configure a custom model name and full request URL for compatible self-hosted services
+- Support DeepSeek, OpenAI, Anthropic Claude, Google Gemini, and custom OpenAI-compatible services
+- Configure the model name and full Chat Completions request URL for compatible services
 - Store API keys only in the macOS Keychain, never in ordinary configuration files
-- Open Settings on first launch to guide AI provider configuration
+- Complete Screen Recording, AI provider, shortcut, and launch preferences in first-run setup
 - Optionally launch automatically when you log in to macOS
 
 ## Requirements
 
 - macOS 14 or later
-- Screen Recording permission (required only for screen-region translation)
+- Screen Recording permission
 - An API key for at least one supported AI provider, or a compatible endpoint
 
 ## Installation
@@ -32,8 +32,8 @@ the AI service you select.
 ### Install from a release
 
 Download the latest `.dmg` from the repository's Releases page, open it, and drag
-OpenScreenTranslate into the Applications folder. When using screen translation for the
-first time, grant Screen Recording permission when macOS prompts you.
+OpenScreenTranslate into the Applications folder. On first launch, follow the setup window to
+grant Screen Recording permission, configure an AI provider, and choose your preferences.
 
 ### Run from source
 
@@ -48,13 +48,13 @@ npm run tauri dev
 
 ## Usage
 
-1. Open Settings from the menu bar and configure an AI provider, model, request URL, and API key.
+1. Complete the first-run setup, including Screen Recording permission and an AI provider API key.
 2. Use the Screen Capture & Translate shortcut to select content, or use the Translate shortcut to enter text manually.
 3. Choose the source and target languages in the translation window. You can edit the recognized text if OCR needs correction.
 
 New installations use `Command+1` for screen capture and translation and `Command+2` for
 manual translation. Launch at login is disabled by default. The app checks Screen Recording
-permission at startup and requests it when macOS has not yet recorded a choice.
+permission and the selected provider's API key at startup, then reopens setup if either is missing.
 
 ## Development
 

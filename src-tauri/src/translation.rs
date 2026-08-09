@@ -2,7 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 pub const DEFAULT_PROVIDER: &str = "deepseek";
-pub const SUPPORTED_PROVIDERS: [&str; 4] = ["deepseek", "openai", "anthropic", "gemini"];
+pub const SUPPORTED_PROVIDERS: [&str; 5] =
+    ["deepseek", "openai", "anthropic", "gemini", "compatible"];
 pub const SUPPORTED_LANGUAGES: [&str; 10] = [
     "zh-CN", "zh-TW", "en", "ja", "ko", "fr", "de", "es", "ru", "pt",
 ];
@@ -136,6 +137,7 @@ pub fn provider_name(provider: &str) -> Result<&'static str, String> {
         "openai" => Ok("OpenAI"),
         "anthropic" => Ok("Anthropic Claude"),
         "gemini" => Ok("Google Gemini"),
+        "compatible" => Ok("兼容服务"),
         _ => Err("不支持所选的 AI 供应商".to_string()),
     }
 }
@@ -146,6 +148,7 @@ pub fn default_request_config(provider: &str) -> Result<ProviderRequestConfig, S
         "openai" => (OPENAI_MODEL, OPENAI_BASE_URL),
         "anthropic" => (ANTHROPIC_MODEL, ANTHROPIC_BASE_URL),
         "gemini" => (GEMINI_MODEL, GEMINI_BASE_URL),
+        "compatible" => ("", ""),
         _ => return Err("不支持所选的 AI 供应商".to_string()),
     };
     Ok(ProviderRequestConfig {
@@ -403,6 +406,50 @@ fn translate_openai(
     })
 }
 
+fn translate_openai_compatible(
+    client: &reqwest::blocking::Client,
+    api_key: &str,
+    source_text: &str,
+    prompt: &str,
+    config: &ProviderRequestConfig,
+) -> Result<TranslationOutput, String> {
+    let body = serde_json::json!({
+        "model": config.model.trim(),
+        "messages": [
+            { "role": "system", "content": prompt },
+            { "role": "user", "content": source_text }
+        ],
+        "max_tokens": 8192,
+        "stream": false
+    });
+    let response_body = send_request(
+        "compatible",
+        client
+            .post(endpoint_url(config)?)
+            .bearer_auth(api_key)
+            .json(&body),
+    )?;
+    let response: DeepSeekResponse = serde_json::from_str(&response_body)
+        .map_err(|error| format!("兼容服务返回了无法解析的响应：{error}"))?;
+    let text = response
+        .choices
+        .into_iter()
+        .next()
+        .and_then(|choice| choice.message.content)
+        .unwrap_or_default();
+    Ok(TranslationOutput {
+        text: non_empty_text("compatible", text)?,
+        prompt_tokens: response
+            .usage
+            .as_ref()
+            .and_then(|usage| usage.prompt_tokens),
+        completion_tokens: response
+            .usage
+            .as_ref()
+            .and_then(|usage| usage.completion_tokens),
+    })
+}
+
 fn translate_anthropic(
     client: &reqwest::blocking::Client,
     api_key: &str,
@@ -519,6 +566,7 @@ pub fn translate(
         "openai" => translate_openai(&client, api_key, source_text, &prompt, config),
         "anthropic" => translate_anthropic(&client, api_key, source_text, &prompt, config),
         "gemini" => translate_gemini(&client, api_key, source_text, &prompt, config),
+        "compatible" => translate_openai_compatible(&client, api_key, source_text, &prompt, config),
         _ => Err("不支持所选的 AI 供应商".to_string()),
     }
 }
@@ -537,9 +585,14 @@ mod tests {
             assert!(is_supported_provider(provider));
             assert!(provider_name(provider).is_ok());
             let config = default_request_config(provider).expect("provider should have defaults");
-            assert!(validate_request_config(&config).is_ok());
-            let endpoint = endpoint_url(&config).expect("endpoint should be valid");
-            assert_eq!(endpoint.as_str(), config.base_url);
+            if provider == "compatible" {
+                assert!(config.model.is_empty());
+                assert!(config.base_url.is_empty());
+            } else {
+                assert!(validate_request_config(&config).is_ok());
+                let endpoint = endpoint_url(&config).expect("endpoint should be valid");
+                assert_eq!(endpoint.as_str(), config.base_url);
+            }
         }
     }
 

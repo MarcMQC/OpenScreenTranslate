@@ -22,6 +22,7 @@ pub struct CaptureMetadata {
 unsafe extern "C" {
     fn ost_has_screen_capture_permission() -> bool;
     fn ost_request_screen_capture_permission() -> bool;
+    fn ost_open_screen_capture_settings() -> bool;
     fn ost_configure_capture_window(window_pointer: *mut c_void);
     fn ost_present_capture_window(window_pointer: *mut c_void);
     fn ost_configure_result_window(window_pointer: *mut c_void);
@@ -51,6 +52,14 @@ pub fn has_permission() -> bool {
 
 pub fn request_permission() -> bool {
     unsafe { ost_request_screen_capture_permission() }
+}
+
+pub fn open_permission_settings() -> Result<(), String> {
+    if unsafe { ost_open_screen_capture_settings() } {
+        Ok(())
+    } else {
+        Err("无法打开屏幕录制权限设置".to_string())
+    }
 }
 
 pub fn configure_capture_window(window_pointer: *mut c_void) {
