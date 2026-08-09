@@ -58,7 +58,21 @@
     "targets": "all",
     "macOS": {
       "minimumSystemVersion": "14.0",
-      "infoPlist": "Info.plist"
+      "infoPlist": "Info.plist",
+      "dmg": {
+        "windowSize": {
+          "width": 660,
+          "height": 400
+        },
+        "appPosition": {
+          "x": 170,
+          "y": 105
+        },
+        "applicationFolderPosition": {
+          "x": 490,
+          "y": 105
+        }
+      }
     },
     "icon": [
       "icons/icon.icns"

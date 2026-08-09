@@ -1,43 +1,36 @@
 # OpenScreenTranslate
 
-English | [简体中文](README.zh-CN.md)
+> 一款由 AI 驱动的开源 macOS 菜单栏截图翻译工具，帮助你快速识别并翻译屏幕文本。使用翻译功能前，需要自行申请并配置受支持 AI 服务供应商的 API Key。
 
-> An open-source, AI-powered macOS menu bar app for quickly recognizing and translating text on your screen. To use translation, you must provide and configure your own API key (AK) from a supported AI provider.
+OpenScreenTranslate 基于 Tauri 2、Rust、ScreenCaptureKit 与 Apple Vision 构建。应用常驻菜单栏，不显示 Dock 图标，并支持截图翻译与手动输入翻译。OCR 在本机完成，只有待翻译文本会发送至用户选择的 AI 服务。
 
-OpenScreenTranslate is built with Tauri 2, Rust, ScreenCaptureKit, and Apple Vision.
-It lives in the menu bar without a Dock icon and supports both screen-region translation
-and manual text translation. OCR runs locally; only the text to be translated is sent to
-the AI service you select.
+## 功能特性
 
-## Features
+- 使用可自定义的全局快捷键框选屏幕区域，按 `Esc` 取消截图
+- 使用 Apple Vision 在本机识别选区内的多语言文本
+- 允许编辑识别结果，修正 OCR 误差后重新翻译
+- 使用独立快捷键直接打开手动翻译窗口
+- 支持 DeepSeek、OpenAI、Anthropic Claude、Google Gemini 与自定义兼容服务
+- 所有服务均可配置模型名称和完整请求 URL
+- API Key 仅保存在 macOS 钥匙串中，不写入普通配置文件
+- 首次启动通过引导页完成屏幕录制权限、AI 服务、默认语言、快捷键与启动偏好设置
+- 支持登录 macOS 时自动启动
 
-- Select a screen region with a customizable global shortcut; press `Esc` to cancel
-- Recognize multilingual text locally with Apple Vision
-- Edit recognized text to correct OCR errors and translate again
-- Open the manual translation window with a separate global shortcut
-- Support DeepSeek, OpenAI, Anthropic Claude, Google Gemini, and custom OpenAI-compatible services
-- Configure the model name and full Chat Completions request URL for compatible services
-- Store API keys only in the macOS Keychain, never in ordinary configuration files
-- Complete Screen Recording, AI provider, shortcut, and launch preferences in first-run setup
-- Optionally launch automatically when you log in to macOS
+## 系统要求
 
-## Requirements
+- macOS 14 或更高版本
+- 屏幕录制权限
+- 至少一个受支持 AI 服务的 API Key 或兼容接口
 
-- macOS 14 or later
-- Screen Recording permission
-- An API key for at least one supported AI provider, or a compatible endpoint
+## 安装
 
-## Installation
+### 从发布页面安装
 
-### Install from a release
+从仓库的 Releases 页面下载最新 `.dmg`，打开后将 OpenScreenTranslate 拖入“应用程序”文件夹。首次启动时，请按照引导页授予屏幕录制权限、配置 AI 服务并选择使用偏好。
 
-Download the latest `.dmg` from the repository's Releases page, open it, and drag
-OpenScreenTranslate into the Applications folder. On first launch, follow the setup window to
-grant Screen Recording permission, configure an AI provider, and choose your preferences.
+### 从源码运行
 
-### Run from source
-
-Development requires Node.js 20 or later, Rust stable, and Xcode Command Line Tools.
+开发环境需要 Node.js 20 或更高版本、Rust stable 与 Xcode Command Line Tools。
 
 ```bash
 git clone https://github.com/MarcMQC/OpenScreenTranslate.git
@@ -46,159 +39,143 @@ npm install
 npm run tauri dev
 ```
 
-## Usage
+## 使用方式
 
-1. Complete the first-run setup, including Screen Recording permission and an AI provider API key.
-2. Use the Screen Capture & Translate shortcut to select content, or use the Translate shortcut to enter text manually.
-3. Choose the source and target languages in the translation window. You can edit the recognized text if OCR needs correction.
+1. 完成首次启动引导，包括屏幕录制权限和 AI 服务 API Key。
+2. 使用“截图并翻译”快捷键框选屏幕内容，或使用“翻译”快捷键手动输入文本。
+3. 在翻译窗口中调整源语言和目标语言；识别文本不准确时可直接修改原文。
 
-New installations use `Command+1` for screen capture and translation and `Command+2` for
-manual translation. Launch at login is disabled by default. The app checks Screen Recording
-permission and the selected provider's API key at startup, then reopens setup if either is missing.
+新安装默认使用 `Command+1` 截图并翻译、`Command+2` 打开手动翻译，登录时自动启动默认关闭。应用启动时会检查屏幕录制权限和当前 AI 服务的 API Key；任一项缺失时会重新打开引导页。
 
-## Development
+## 开发
 
-Installation and development commands:
+安装与开发命令：
 
-| Command | Purpose |
+| 命令 | 用途 |
 | --- | --- |
-| `npm install` | Install frontend dependencies and the Tauri CLI |
-| `npm ci` | Perform a reproducible clean install from `package-lock.json`, suitable for CI |
-| `npm run tauri dev` | Start the desktop app in development mode |
-| `npm run dev` | Start only the Vite frontend development server |
-| `npm run build` | Run TypeScript checks and build the frontend |
-| `npm run preview` | Preview the built frontend locally |
-| `npm run tauri -- <command>` | Invoke the project's local Tauri CLI directly |
+| `npm install` | 安装前端与 Tauri CLI 依赖 |
+| `npm ci` | 根据 `package-lock.json` 执行可复现的干净安装，适合持续集成环境 |
+| `npm run tauri dev` | 启动开发版本 |
+| `npm run dev` | 只启动 Vite 前端开发服务器，不启动桌面应用 |
+| `npm run build` | 执行 TypeScript 检查并构建前端 |
+| `npm run preview` | 本地预览已构建的前端页面 |
+| `npm run tauri -- <command>` | 直接调用项目内安装的 Tauri CLI |
 
-Validation and maintenance commands:
+检查与维护命令：
 
-| Command | Purpose |
+| 命令 | 用途 |
 | --- | --- |
-| `npm run check` | Run secret scanning, formatting checks, frontend build, Rust tests, and Clippy |
-| `npm run security:check` | Scan for common secrets, private keys, and files that must not be committed |
-| `npm run version:sync` | Synchronize the root `VERSION` into all build configurations |
-| `npm run version:check` | Verify that every build configuration matches `VERSION` |
-| `npm run settings:delete` | Permanently delete app settings and AI provider API keys from Keychain |
-| `npm run reset:macos:screen-capture` | Reset the app's macOS Screen Recording permission record |
+| `npm run check` | 执行敏感信息扫描、格式检查、前端构建、Rust 测试和 Clippy |
+| `npm run security:check` | 单独扫描常见密钥、私钥及不应提交的敏感文件 |
+| `npm run version:sync` | 将根目录 `VERSION` 同步到各构建配置 |
+| `npm run version:check` | 检查各构建配置中的版本是否与 `VERSION` 一致 |
+| `npm run settings:delete` | 永久删除应用设置及钥匙串中保存的 AI 服务 API Key |
+| `npm run reset:macos:screen-capture` | 重置应用的 macOS 屏幕录制授权记录 |
 
-macOS build and release commands:
+macOS 构建与发布命令：
 
-| Command | Purpose |
+| 命令 | 用途 |
 | --- | --- |
-| `npm run build:macos:debug` | Build a Debug `.app` for local testing only |
-| `npm run build:macos:app` | Build a local Release `.app` |
-| `npm run release:macos:setup` | Store Apple notarization credentials securely in the macOS Keychain |
-| `npm run release:macos` | Build, sign, notarize, and verify a DMG for the current architecture |
-| `npm run release:macos:resume` | Resume waiting for and processing a previously submitted notarization |
-| `npm run release:macos:universal` | Build a universal DMG for both Apple Silicon and Intel |
+| `npm run build:macos:debug` | 生成仅供本机测试的 Debug `.app` |
+| `npm run build:macos:debug:dmg` | 生成使用本地 ad-hoc 签名且不提交公证的 Debug DMG |
+| `npm run build:macos:app` | 构建本地 Release `.app` |
+| `npm run release:macos:setup` | 将 Apple 公证凭据安全保存到 macOS 钥匙串 |
+| `npm run release:macos` | 构建、签名、公证并验证当前架构的 DMG |
+| `npm run release:macos:resume` | 继续等待并处理此前已提交的公证任务 |
+| `npm run release:macos:universal` | 构建同时支持 Apple Silicon 与 Intel 的 DMG |
 
-`package.json` also defines the following npm lifecycle hooks. npm runs them automatically
-before their corresponding commands, so you normally should not invoke them directly:
+`package.json` 还包含以下 npm 生命周期钩子。运行对应主命令时，npm 会自动执行这些钩子，通常不需要手动调用：
 
-| Automatic hook | Runs before | Purpose |
+| 自动钩子 | 在何时执行 | 用途 |
 | --- | --- | --- |
-| `predev` | `npm run dev` | Synchronize the project version |
-| `prebuild` | `npm run build` | Synchronize the project version |
-| `prebuild:macos:app` | `npm run build:macos:app` | Synchronize the project version |
-| `prerelease:macos` | `npm run release:macos` | Synchronize the project version |
-| `prerelease:macos:universal` | `npm run release:macos:universal` | Synchronize the project version |
-| `pretauri` | `npm run tauri -- <command>` | Synchronize the project version |
+| `predev` | `npm run dev` 之前 | 同步项目版本号 |
+| `prebuild` | `npm run build` 之前 | 同步项目版本号 |
+| `prebuild:macos:app` | `npm run build:macos:app` 之前 | 同步项目版本号 |
+| `prerelease:macos` | `npm run release:macos` 之前 | 同步项目版本号 |
+| `prerelease:macos:universal` | `npm run release:macos:universal` 之前 | 同步项目版本号 |
+| `pretauri` | `npm run tauri -- <command>` 之前 | 同步项目版本号 |
 
-Project structure:
+项目结构：
 
 ```text
-src/                  Frontend UI and interactions
-src-tauri/src/        Tauri commands, translation, and credential storage
-src-tauri/native/     Native ScreenCaptureKit and Apple Vision implementation
-scripts/              Validation, signing, and release scripts
-docs/                 Maintainer documentation
+src/                  前端界面与交互
+src-tauri/src/        Tauri 命令、翻译和凭据存储
+src-tauri/native/     ScreenCaptureKit 与 Apple Vision 原生实现
+scripts/              检查、签名与发布脚本
+docs/                 项目维护文档
 ```
 
-Development builds log selection coordinates, Retina pixel conversion, OCR character counts,
-translation timing, and token usage. They never log API keys or complete translated content.
-Release builds retain only diagnostic error information.
+开发构建会记录选区坐标、Retina 像素换算、OCR 字符数、翻译耗时与 token 用量，但不会记录 API Key 或完整翻译内容。发布构建只保留错误诊断信息。
 
-### Version management
+### 版本管理
 
-The root [`VERSION`](VERSION) file is the single source of truth for the project version.
-For a new release, update only this file and run `npm run version:sync`. Development, build,
-and Tauri commands also synchronize `package.json`, `package-lock.json`, Cargo, and Tauri
-configuration automatically before running. `npm run check` verifies that all derived values match.
+根目录的 [`VERSION`](VERSION) 是项目版本号的唯一来源。发布新版本时只修改该文件，然后执行 `npm run version:sync`。开发、构建与 Tauri 命令也会在运行前自动同步 `package.json`、`package-lock.json`、Cargo 和 Tauri 配置；`npm run check` 会检查这些派生值是否一致。
 
-## Building and releasing
+## 构建与发布
 
-Build a local Debug app:
+生成本地 Debug 应用：
 
 ```bash
 npm run build:macos:debug
 ```
 
-The result is written to `src-tauri/target/debug/bundle/macos/OpenScreenTranslate.app`.
-The script synchronizes `VERSION`, builds with the Debug configuration, and applies a local
-ad-hoc signature. It does not create a DMG, use Developer ID signing, or submit the app for
-Apple notarization, and is intended only for local testing. The local signature includes a
-stable Bundle ID designated requirement, allowing later builds from the same script to match
-the same system permission record.
+产物位于 `src-tauri/target/debug/bundle/macos/OpenScreenTranslate.app`。脚本会自动同步 `VERSION`，使用 Debug 配置构建，并施加本机 ad-hoc 签名；它不会生成 DMG、使用 Developer ID 或提交 Apple 公证，仅用于本地测试。本地签名包含稳定的 Bundle ID designated requirement，因此后续使用该脚本重新构建时可以继续匹配同一条系统授权。
 
-If you granted permission to an app built by an older version of the script, reset its old
-`cdhash` permission record once:
+需要测试完整安装界面时，可以生成无需 Developer ID 和 Apple 公证的 Debug DMG：
+
+```bash
+npm run build:macos:debug:dmg
+```
+
+产物位于 `src-tauri/target/debug/bundle/dmg/`，文件名以 `_debug.dmg` 结尾。脚本会对 DMG 内的应用施加相同的本地 ad-hoc 签名，并生成 `.sha256` 校验文件；该产物仅用于本机或受控测试，不可公开分发。
+
+如果曾使用旧版脚本构建并授权过应用，需要清理一次旧的 `cdhash` 授权：
 
 ```bash
 npm run reset:macos:screen-capture
 ```
 
-Then quit OpenScreenTranslate completely, launch the new build, grant Screen Recording
-permission again, and restart the app. A production build signed with Developer ID uses a
-different trusted signing identity and requires its own permission on first installation.
+随后完全退出 OpenScreenTranslate，启动新构建，重新勾选屏幕录制权限，并再次退出重启。正式 Developer ID 签名版本使用另一套可信签名身份，首次安装仍需单独授权。
 
-Build a local Release app:
+生成本地 Release 应用：
 
 ```bash
 npm run build:macos:app
 ```
 
-The result is written to `src-tauri/target/release/bundle/macos/OpenScreenTranslate.app`.
-For the complete Developer ID signing, notarization, and universal DMG workflow, see the
-[release guide](docs/RELEASING.md).
+产物位于 `src-tauri/target/release/bundle/macos/OpenScreenTranslate.app`。Developer ID 签名、公证和通用 DMG 的完整流程请阅读[发布指南](docs/RELEASING.md)。
 
-## Uninstallation and data removal
+## 卸载与数据清理
 
-Quit the app completely, then move `OpenScreenTranslate.app` to the Trash. macOS does not
-automatically remove app settings or API keys stored in Keychain. If you still have the source
-directory, run:
+完全退出应用后，将 `OpenScreenTranslate.app` 移到废纸篓即可卸载应用本体。macOS 不会自动删除应用设置及钥匙串中的 API Key；如果仍保留源码目录，可执行：
 
 ```bash
 npm run settings:delete
 ```
 
-The command lists what it will remove and asks for confirmation. macOS manages Screen Recording
-permission separately; run `npm run reset:macos:screen-capture` if you also need to reset it.
+该命令会先列出删除范围并要求确认。屏幕录制授权记录由 macOS 管理，需要时可另行执行 `npm run reset:macos:screen-capture`。
 
-## Privacy and security
+## 隐私与安全
 
-- OCR is performed locally with Apple Vision.
-- Only text awaiting translation is sent to the AI service you select and configure.
-- Each provider's API key is stored separately in the macOS Keychain.
-- Never include API keys or other secrets in issues, logs, or screenshots.
+- OCR 由 Apple Vision 在本机完成
+- 只有待翻译文本会发送到用户选择并配置的 AI 服务
+- 各供应商 API Key 独立保存在 macOS 钥匙串中
+- 请勿在 Issue、日志或截图中提交 API Key 等敏感信息
 
-Report security issues privately according to the [security policy](SECURITY.md).
+安全问题请按照[安全策略](SECURITY.md)私下报告。
 
-### Before uploading to GitHub
+### 上传 GitHub 前检查
 
 ```bash
 npm run check
 ```
 
-This command includes a high-confidence sensitive-information scan. You should still inspect
-the files being committed and ensure they contain no `.env` files, certificates, private keys,
-Apple notarization files, API keys, build artifacts, or personal data. Do not use `git add -f`
-to force ignored files into a commit.
+该命令包含高置信度敏感信息扫描。仍应人工确认提交列表中不包含 `.env`、证书、私钥、Apple 公证文件、API Key、构建产物或个人数据；请勿使用 `git add -f` 强制提交被 `.gitignore` 排除的文件。
 
-## Contributing
+## 参与贡献
 
-Issues and pull requests are welcome. Read the [contributing guide](CONTRIBUTING.md) and
-[code of conduct](CODE_OF_CONDUCT.md) before getting started.
+欢迎提交 Issue 和 Pull Request。开始前请阅读[贡献指南](CONTRIBUTING.md)与[行为准则](CODE_OF_CONDUCT.md)。
 
-## License
+## 许可证
 
-This project is available under the [MIT License](LICENSE).
+本项目基于 [MIT License](LICENSE) 开源。

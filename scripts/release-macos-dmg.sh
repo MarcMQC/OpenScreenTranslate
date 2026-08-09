@@ -11,6 +11,7 @@ OST_SKIP_CHECKS=0
 OST_ACTION="release"
 OST_DMG_PATH=""
 OST_SUBMISSION_ID=""
+OST_DMG_LAYOUT_WORK_DIR=""
 
 usage() {
   cat <<'EOF'
@@ -54,6 +55,13 @@ cleanup_release_temporary_files() {
   if [ -n "${OST_RELEASE_MARKER:-}" ]; then
     rm -f "$OST_RELEASE_MARKER"
   fi
+  if [ -n "$OST_DMG_LAYOUT_WORK_DIR" ]; then
+    rm -f \
+      "$OST_DMG_LAYOUT_WORK_DIR/layout-rw.dmg" \
+      "$OST_DMG_LAYOUT_WORK_DIR/layout-final.dmg"
+    rmdir "$OST_DMG_LAYOUT_WORK_DIR/mount" >/dev/null 2>&1 || true
+    rmdir "$OST_DMG_LAYOUT_WORK_DIR" >/dev/null 2>&1 || true
+  fi
 }
 
 require_command() {
@@ -69,6 +77,41 @@ verify_release_versions() {
   node scripts/sync-version.mjs --check
   printf 'Release version: '
   sed -n '1p' VERSION
+}
+
+prepare_release_dmg_layout() {
+  local dmg_path="$1"
+  local rw_path
+  local final_path
+
+  OST_DMG_LAYOUT_WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/openscreentranslate-dmg-layout.XXXXXX")"
+  rw_path="$OST_DMG_LAYOUT_WORK_DIR/layout-rw.dmg"
+  final_path="$OST_DMG_LAYOUT_WORK_DIR/layout-final.dmg"
+  OST_DMG_MOUNT_POINT="$OST_DMG_LAYOUT_WORK_DIR/mount"
+  mkdir "$OST_DMG_MOUNT_POINT"
+
+  hdiutil convert "$dmg_path" -format UDRW -o "$rw_path" >/dev/null
+  hdiutil attach "$rw_path" \
+    -readwrite \
+    -noverify \
+    -nobrowse \
+    -mountpoint "$OST_DMG_MOUNT_POINT" >/dev/null
+
+  "$OST_PROJECT_ROOT/scripts/prepare-macos-dmg-volume.sh" "$OST_DMG_MOUNT_POINT"
+
+  hdiutil detach "$OST_DMG_MOUNT_POINT" >/dev/null
+  OST_DMG_MOUNT_POINT=""
+
+  hdiutil convert "$rw_path" \
+    -format UDZO \
+    -imagekey zlib-level=9 \
+    -o "$final_path" >/dev/null
+  mv -f "$final_path" "$dmg_path"
+
+  rm -f "$rw_path"
+  rmdir "$OST_DMG_LAYOUT_WORK_DIR/mount"
+  rmdir "$OST_DMG_LAYOUT_WORK_DIR"
+  OST_DMG_LAYOUT_WORK_DIR=""
 }
 
 resolve_target() {
@@ -187,6 +230,7 @@ validate_release_environment() {
   require_command xcrun
   require_command codesign
   require_command hdiutil
+  require_command SetFile
   require_command spctl
   require_command shasum
 
@@ -411,6 +455,17 @@ run_release() {
   [ "${#dmg_files[@]}" -eq 1 ] \
     || die "expected one newly built DMG in $dmg_dir, found ${#dmg_files[@]}"
   dmg_path="${dmg_files[0]}"
+
+  echo
+  echo "Removing visible DMG support files and scroll overflow..."
+  prepare_release_dmg_layout "$dmg_path"
+
+  echo "Re-signing customized DMG with Developer ID..."
+  codesign \
+    --force \
+    --sign "$APPLE_SIGNING_IDENTITY" \
+    --timestamp \
+    "$dmg_path"
 
   echo
   echo "Verifying Developer ID signatures..."

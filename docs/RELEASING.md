@@ -15,6 +15,16 @@ npm run build:macos:debug
 使用稳定的 Bundle ID designated requirement，避免每次构建都因 `cdhash` 变化而
 丢失屏幕录制授权。
 
+需要验证 DMG 背景、拖拽安装和首次启动流程时，运行：
+
+```bash
+npm run build:macos:debug:dmg
+```
+
+产物位于 `src-tauri/target/debug/bundle/dmg/`，文件名以 `_debug.dmg` 结尾，并附带
+`.sha256` 文件。DMG 内的应用只使用稳定的本地 ad-hoc 签名；脚本不会读取
+Developer ID 身份、访问公证钥匙串凭据或向 Apple 提交公证，因此不可公开分发。
+
 从旧版 ad-hoc 构建迁移时，需要重置一次旧授权，再启动新构建并重新授权：
 
 ```bash

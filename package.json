@@ -16,6 +16,7 @@
     "check": "./scripts/check.sh",
     "settings:delete": "./scripts/delete-macos-settings.sh",
     "build:macos:debug": "./scripts/build-macos-debug-app.sh",
+    "build:macos:debug:dmg": "./scripts/build-macos-debug-dmg.sh",
     "reset:macos:screen-capture": "./scripts/reset-macos-screen-capture-permission.sh",
     "prebuild:macos:app": "npm run version:sync",
     "build:macos:app": "tauri build --bundles app && ./scripts/sign-macos-app.sh",

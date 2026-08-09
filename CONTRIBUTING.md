@@ -33,6 +33,14 @@ npm run tauri dev
 npm run build:macos:debug
 ```
 
+需要验证 DMG 安装界面时，可生成使用本地 ad-hoc 签名且不提交 Apple 公证的测试镜像：
+
+```bash
+npm run build:macos:debug:dmg
+```
+
+Debug DMG 仅用于本机或受控测试，不可作为正式 Release 分发。
+
 ## 修改原则
 
 - 保持设置页与翻译窗口的视觉风格一致。
