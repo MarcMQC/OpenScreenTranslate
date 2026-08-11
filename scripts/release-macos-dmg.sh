@@ -409,8 +409,12 @@ run_release() {
   local -a build_args
   local -a dmg_files
 
-  validate_release_environment
   cd "$OST_PROJECT_ROOT"
+
+  echo "Cleaning macOS Finder metadata before release..."
+  "$OST_PROJECT_ROOT/scripts/clean-macos-metadata.sh"
+
+  validate_release_environment
 
   product_name="$(node -e 'const fs=require("fs"); const c=JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8")); process.stdout.write(c.productName)')"
   [ -n "$product_name" ] || die "bundle productName is missing from src-tauri/tauri.conf.json"

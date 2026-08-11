@@ -7,6 +7,9 @@ OST_CHECK_PROJECT_ROOT="$(cd "$OST_CHECK_SCRIPT_DIR/.." && pwd)"
 
 cd "$OST_CHECK_PROJECT_ROOT"
 
+echo "Cleaning macOS Finder metadata..."
+"$OST_CHECK_PROJECT_ROOT/scripts/clean-macos-metadata.sh"
+
 echo "Checking version synchronization..."
 node scripts/sync-version.mjs --check
 

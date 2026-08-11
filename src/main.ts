@@ -804,7 +804,7 @@ function renderOnboarding(initialReadiness: StartupReadiness) {
 
 function renderSettings() {
   void invoke("set_main_window_layout", { onboarding: false });
-  document.title = "OpenScreenTranslate 设置";
+  document.title = "OpenScreenTranslate · 设置";
   app.className = "settings";
   app.innerHTML = `
     <section class="settings-section shortcut-settings-section" aria-labelledby="shortcut-settings-heading">

@@ -589,7 +589,15 @@ fn set_main_window_layout(app: tauri::AppHandle, onboarding: bool) -> Result<(),
     } else {
         (560.0, 640.0)
     };
+    let title = if onboarding {
+        "OpenScreenTranslate · 初始设置"
+    } else {
+        "OpenScreenTranslate · 设置"
+    };
 
+    window
+        .set_title(title)
+        .map_err(|error| format!("无法更新窗口标题：{error}"))?;
     window
         .set_size(LogicalSize::new(width, height))
         .map_err(|error| format!("无法调整窗口大小：{error}"))?;
@@ -1733,6 +1741,9 @@ fn build_tray(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut app = tauri::Builder::default()
+        // Register this first so a duplicate launch exits before it can create another tray,
+        // window, or global shortcut registration.
+        .plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {}))
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
             None,
