@@ -2,6 +2,7 @@
 #import <CoreGraphics/CoreGraphics.h>
 #import <Foundation/Foundation.h>
 #import <ImageIO/ImageIO.h>
+#import <QuartzCore/QuartzCore.h>
 #import <ScreenCaptureKit/ScreenCaptureKit.h>
 #import <Vision/Vision.h>
 
@@ -133,6 +134,44 @@ void ost_configure_result_window(void *window_pointer) {
                               NSWindowCollectionBehaviorFullScreenDisallowsTiling |
                               NSWindowCollectionBehaviorIgnoresCycle;
   window.hidesOnDeactivate = NO;
+}
+
+void ost_resize_result_window(void *window_pointer, double height) {
+  if (window_pointer == NULL || !isfinite(height) || height <= 0) {
+    return;
+  }
+
+  NSWindow *window = (__bridge NSWindow *)window_pointer;
+  dispatch_async(dispatch_get_main_queue(), ^{
+    NSRect frame = window.frame;
+    if (fabs(frame.size.height - height) < 0.5) {
+      return;
+    }
+
+    const CGFloat top = NSMaxY(frame);
+    frame.size.height = height;
+    frame.origin.y = top - height;
+
+    NSScreen *screen = window.screen ?: NSScreen.mainScreen;
+    if (screen != nil) {
+      const NSRect visible_frame = screen.visibleFrame;
+      if (NSMinY(frame) < NSMinY(visible_frame)) {
+        frame.origin.y = NSMinY(visible_frame);
+      }
+      if (NSMaxY(frame) > NSMaxY(visible_frame)) {
+        frame.origin.y = NSMaxY(visible_frame) - frame.size.height;
+      }
+    }
+
+    [NSAnimationContext runAnimationGroup:^(NSAnimationContext *context) {
+      context.duration = NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion
+          ? 0.0
+          : 0.14;
+      context.timingFunction =
+          [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseOut];
+      [[window animator] setFrame:frame display:YES];
+    } completionHandler:nil];
+  });
 }
 
 bool ost_copy_text_to_clipboard(const char *text) {

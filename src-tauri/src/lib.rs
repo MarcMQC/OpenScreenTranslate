@@ -54,6 +54,170 @@ fn truncate_source_text(value: String) -> String {
         .collect()
 }
 
+fn is_cjk_character(character: char) -> bool {
+    matches!(
+        character,
+        '\u{3400}'..='\u{4dbf}'
+            | '\u{4e00}'..='\u{9fff}'
+            | '\u{3040}'..='\u{30ff}'
+            | '\u{ac00}'..='\u{d7af}'
+    )
+}
+
+fn looks_like_list_item(line: &str) -> bool {
+    let line = line.trim_start_matches(['"', '\'', '“', '‘', '（', '(', '[']);
+    if ["• ", "· ", "- ", "– ", "— ", "* ", "▪ ", "◦ "]
+        .iter()
+        .any(|prefix| line.starts_with(prefix))
+    {
+        return true;
+    }
+
+    let mut characters = line.chars().peekable();
+    let mut digit_count = 0;
+    while characters.peek().is_some_and(char::is_ascii_digit) && digit_count < 4 {
+        characters.next();
+        digit_count += 1;
+    }
+    digit_count > 0
+        && matches!(characters.next(), Some('.' | ')' | '）' | '、'))
+        && characters.next().is_some_and(char::is_whitespace)
+}
+
+fn line_ends_sentence(line: &str) -> bool {
+    let trimmed = line
+        .trim_end()
+        .trim_end_matches(['"', '\'', '”', '’', ')', '）', ']', '】', '}']);
+    let Some(last_character) = trimmed.chars().last() else {
+        return false;
+    };
+    if matches!(last_character, '。' | '！' | '？' | '!' | '?' | '…') {
+        return true;
+    }
+    if last_character != '.' {
+        return false;
+    }
+
+    let lowercase = trimmed.to_ascii_lowercase();
+    const COMMON_ABBREVIATIONS: [&str; 14] = [
+        "mr.", "mrs.", "ms.", "dr.", "prof.", "sr.", "jr.", "st.", "vs.", "etc.", "e.g.", "i.e.",
+        "no.", "fig.",
+    ];
+    if COMMON_ABBREVIATIONS
+        .iter()
+        .any(|abbreviation| lowercase.ends_with(abbreviation))
+    {
+        return false;
+    }
+
+    let final_word = trimmed
+        .trim_end_matches('.')
+        .split_whitespace()
+        .next_back()
+        .unwrap_or_default();
+    !(final_word.len() == 1
+        && final_word
+            .chars()
+            .all(|character| character.is_ascii_alphabetic()))
+}
+
+fn starts_new_sentence(line: &str) -> bool {
+    let first_character = line
+        .trim_start_matches(['"', '\'', '“', '‘', '（', '(', '[', '【'])
+        .chars()
+        .next();
+    first_character.is_some_and(|character| {
+        character.is_uppercase()
+            || character.is_ascii_digit()
+            || is_cjk_character(character)
+            || matches!(character, '•' | '·' | '-' | '–' | '—' | '*' | '▪' | '◦')
+    })
+}
+
+fn should_join_without_space(previous_line: &str, next_line: &str) -> bool {
+    let previous_character = previous_line.chars().last();
+    let next_character = next_line.chars().next();
+    matches!((previous_character, next_character), (Some(left), Some(right)) if is_cjk_character(left) && is_cjk_character(right))
+        || previous_character
+            .is_some_and(|character| matches!(character, '(' | '（' | '[' | '【' | '{'))
+        || next_character.is_some_and(|character| {
+            matches!(
+                character,
+                ',' | '.'
+                    | '!'
+                    | '?'
+                    | ':'
+                    | ';'
+                    | '，'
+                    | '。'
+                    | '！'
+                    | '？'
+                    | '：'
+                    | '；'
+                    | ')'
+                    | '）'
+                    | ']'
+                    | '】'
+                    | '}'
+            )
+        })
+}
+
+fn normalize_ocr_text_layout(value: &str) -> String {
+    let mut paragraphs = Vec::new();
+    let mut paragraph = String::new();
+    let mut previous_line = String::new();
+
+    let flush_paragraph = |paragraphs: &mut Vec<String>, paragraph: &mut String| {
+        if !paragraph.is_empty() {
+            paragraphs.push(std::mem::take(paragraph));
+        }
+    };
+
+    for raw_line in value.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            flush_paragraph(&mut paragraphs, &mut paragraph);
+            previous_line.clear();
+            continue;
+        }
+
+        let starts_paragraph = !paragraph.is_empty()
+            && (looks_like_list_item(line)
+                || (line_ends_sentence(&previous_line) && starts_new_sentence(line)));
+        if starts_paragraph {
+            flush_paragraph(&mut paragraphs, &mut paragraph);
+            previous_line.clear();
+        }
+
+        if paragraph.is_empty() {
+            paragraph.push_str(line);
+        } else {
+            let hyphenated_word = paragraph.ends_with('-')
+                && paragraph
+                    .chars()
+                    .rev()
+                    .nth(1)
+                    .is_some_and(|character| character.is_ascii_alphabetic())
+                && line
+                    .chars()
+                    .next()
+                    .is_some_and(|character| character.is_ascii_lowercase());
+            if hyphenated_word {
+                paragraph.pop();
+            } else if !should_join_without_space(&previous_line, line) {
+                paragraph.push(' ');
+            }
+            paragraph.push_str(line);
+        }
+        previous_line.clear();
+        previous_line.push_str(line);
+    }
+
+    flush_paragraph(&mut paragraphs, &mut paragraph);
+    paragraphs.join("\n\n")
+}
+
 #[derive(Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct AppSettings {
@@ -186,6 +350,7 @@ struct OcrResult {
     source_language: String,
     target_language: String,
     translation_generation: u64,
+    translation_in_progress: bool,
     translation_text: Option<String>,
     translation_error: Option<String>,
 }
@@ -198,6 +363,7 @@ fn manual_translation_result(request_id: u64, target_language: String) -> OcrRes
         source_language: "auto".to_string(),
         target_language,
         translation_generation: 0,
+        translation_in_progress: false,
         translation_text: Some(String::new()),
         translation_error: None,
     }
@@ -206,12 +372,29 @@ fn manual_translation_result(request_id: u64, target_language: String) -> OcrRes
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct TranslationSnapshot {
+    request_id: u64,
+    translation_generation: u64,
     status: String,
     text: Option<String>,
     error: Option<String>,
     source_language: String,
     target_language: String,
     manual_input: bool,
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TranslationProgress {
+    request_id: u64,
+    translation_generation: u64,
+    text: String,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TranslationRequestToken {
+    request_id: u64,
+    translation_generation: u64,
 }
 
 #[derive(serde::Serialize)]
@@ -723,6 +906,55 @@ fn show_result_window(app: &tauri::AppHandle) {
     }
 }
 
+fn reset_result_window_size(app: &tauri::AppHandle) {
+    let Some(window) = app.get_webview_window(RESULT_WINDOW_LABEL) else {
+        return;
+    };
+    if let Err(error) = window.set_size(LogicalSize::new(640.0, 404.0)) {
+        eprintln!("failed to reset result window size: {error}");
+    }
+}
+
+#[tauri::command]
+fn resize_result_window(app: tauri::AppHandle, height: f64) -> Result<f64, String> {
+    const MIN_HEIGHT: f64 = 404.0;
+    let window = app
+        .get_webview_window(RESULT_WINDOW_LABEL)
+        .ok_or_else(|| "翻译窗口不可用".to_string())?;
+    let monitor = window
+        .current_monitor()
+        .map_err(|error| format!("无法读取显示器尺寸：{error}"))?;
+    let scale_factor = monitor.as_ref().map_or_else(
+        || window.scale_factor().unwrap_or(1.0),
+        Monitor::scale_factor,
+    );
+    let max_height = monitor.as_ref().map_or(760.0, |monitor| {
+        (f64::from(monitor.work_area().size.height) / scale_factor * 0.7).max(MIN_HEIGHT)
+    });
+    let height = height.clamp(MIN_HEIGHT, max_height).round();
+
+    #[cfg(target_os = "macos")]
+    {
+        let window_pointer = window
+            .ns_window()
+            .map_err(|error| format!("无法访问翻译窗口：{error}"))?;
+        macos_capture::resize_result_window(window_pointer, height);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let current_width = window
+            .outer_size()
+            .map(|size| f64::from(size.width) / scale_factor)
+            .unwrap_or(640.0);
+        window
+            .set_size(LogicalSize::new(current_width, height))
+            .map_err(|error| format!("无法调整翻译窗口大小：{error}"))?;
+    }
+
+    Ok(height)
+}
+
 fn begin_manual_translation(app: &tauri::AppHandle) -> Result<(), String> {
     let target_language = app
         .state::<SettingsState>()
@@ -741,6 +973,7 @@ fn begin_manual_translation(app: &tauri::AppHandle) -> Result<(), String> {
         .lock()
         .map_err(|_| "OCR result mutex poisoned".to_string())? =
         Some(manual_translation_result(request_id, target_language));
+    reset_result_window_size(app);
     show_result_window(app);
     app.emit_to(RESULT_WINDOW_LABEL, "ocr-ready", ())
         .map_err(|error| format!("无法初始化翻译窗口：{error}"))
@@ -920,13 +1153,14 @@ fn translate_ocr_result(
     target_language: String,
 ) {
     let started_at = std::time::Instant::now();
+    let mut last_progress_emit: Option<std::time::Instant> = None;
     let translation_result = (|| {
         if source_text.trim().is_empty() {
-            return Ok(translation::TranslationOutput {
+            return Ok(Some(translation::TranslationOutput {
                 text: String::new(),
                 prompt_tokens: None,
                 completion_tokens: None,
-            });
+            }));
         }
 
         let (provider, request_config) = {
@@ -951,15 +1185,70 @@ fn translate_ocr_result(
         let api_key = credential_store::read_api_key(&provider)?
             .ok_or_else(|| format!("尚未配置 {provider_name} API Key，请先在设置中保存 Key"))?;
 
-        translation::translate(
+        translation::translate_streaming(
             &provider,
             &api_key,
             &source_text,
             &source_language,
             &target_language,
             &request_config,
+            |delta| {
+                let state = app.state::<CaptureState>();
+                let progress = {
+                    let mut current_result = match state.ocr_result.lock() {
+                        Ok(result) => result,
+                        Err(_) => {
+                            eprintln!(
+                                "failed to store translation progress: OCR result mutex poisoned"
+                            );
+                            return false;
+                        }
+                    };
+                    let Some(result) = current_result.as_mut() else {
+                        return false;
+                    };
+                    if result.request_id != request_id
+                        || result.translation_generation != translation_generation
+                    {
+                        return false;
+                    }
+
+                    let streamed_text = result.translation_text.get_or_insert_default();
+                    streamed_text.push_str(delta);
+                    let should_emit = last_progress_emit.is_none_or(|last_emit| {
+                        last_emit.elapsed() >= std::time::Duration::from_millis(32)
+                    });
+                    if should_emit {
+                        last_progress_emit = Some(std::time::Instant::now());
+                        Some(TranslationProgress {
+                            request_id,
+                            translation_generation,
+                            text: streamed_text.to_string(),
+                        })
+                    } else {
+                        None
+                    }
+                };
+
+                if let Some(progress) = progress {
+                    if let Err(error) =
+                        app.emit_to(RESULT_WINDOW_LABEL, "translation-progress", progress)
+                    {
+                        eprintln!("failed to notify translation progress: {error}");
+                    }
+                }
+                true
+            },
         )
     })();
+
+    if matches!(translation_result, Ok(None)) {
+        #[cfg(debug_assertions)]
+        eprintln!(
+            "stopped superseded translation stream: request={request_id}, generation={translation_generation}"
+        );
+        return;
+    }
 
     let state = app.state::<CaptureState>();
     let mut current_result = match state.ocr_result.lock() {
@@ -981,7 +1270,7 @@ fn translate_ocr_result(
     }
 
     let event_name = match translation_result {
-        Ok(output) => {
+        Ok(Some(output)) => {
             if cfg!(debug_assertions) {
                 eprintln!(
                     "translation completed: request={request_id}, source_chars={}, translated_chars={}, prompt_tokens={}, completion_tokens={}, elapsed_ms={}",
@@ -996,15 +1285,18 @@ fn translate_ocr_result(
                     started_at.elapsed().as_millis()
                 );
             }
+            result.translation_in_progress = false;
             result.translation_text = Some(output.text);
             result.translation_error = None;
             "translation-ready"
         }
+        Ok(None) => return,
         Err(error) => {
             eprintln!(
                 "translation failed: request={request_id}, elapsed_ms={}, error={error}",
                 started_at.elapsed().as_millis()
             );
+            result.translation_in_progress = false;
             result.translation_text = None;
             result.translation_error = Some(error);
             "translation-error"
@@ -1048,6 +1340,7 @@ fn start_ocr(app: &tauri::AppHandle, source_png: Vec<u8>, crop_rect: [f64; 4]) {
 
     let request_id = state.next_request_id.fetch_add(1, Ordering::AcqRel) + 1;
     *state.ocr_result.lock().expect("OCR result mutex poisoned") = None;
+    reset_result_window_size(app);
     show_result_window(app);
 
     let app = app.clone();
@@ -1071,10 +1364,9 @@ fn start_ocr(app: &tauri::AppHandle, source_png: Vec<u8>, crop_rect: [f64; 4]) {
                 )
             })
             .and_then(|()| {
-                let source_text = truncate_source_text(
-                    std::fs::read_to_string(&text_path)
-                        .map_err(|error| format!("failed to read recognized text: {error}"))?,
-                );
+                let recognized_text = std::fs::read_to_string(&text_path)
+                    .map_err(|error| format!("failed to read recognized text: {error}"))?;
+                let source_text = truncate_source_text(normalize_ocr_text_layout(&recognized_text));
                 let target_language = app
                     .state::<SettingsState>()
                     .0
@@ -1089,6 +1381,7 @@ fn start_ocr(app: &tauri::AppHandle, source_png: Vec<u8>, crop_rect: [f64; 4]) {
                     source_language: "auto".to_string(),
                     target_language,
                     translation_generation: 1,
+                    translation_in_progress: true,
                     translation_text: None,
                     translation_error: None,
                 })
@@ -1528,6 +1821,8 @@ fn get_translation_result(state: State<'_, CaptureState>) -> Result<TranslationS
 
     if let Some(error) = &result.translation_error {
         return Ok(TranslationSnapshot {
+            request_id: result.request_id,
+            translation_generation: result.translation_generation,
             status: "error".to_string(),
             text: None,
             error: Some(error.clone()),
@@ -1536,8 +1831,22 @@ fn get_translation_result(state: State<'_, CaptureState>) -> Result<TranslationS
             manual_input: result.manual_input,
         });
     }
+    if result.translation_in_progress {
+        return Ok(TranslationSnapshot {
+            request_id: result.request_id,
+            translation_generation: result.translation_generation,
+            status: "processing".to_string(),
+            text: result.translation_text.clone(),
+            error: None,
+            source_language: result.source_language.clone(),
+            target_language: result.target_language.clone(),
+            manual_input: result.manual_input,
+        });
+    }
     if let Some(text) = &result.translation_text {
         return Ok(TranslationSnapshot {
+            request_id: result.request_id,
+            translation_generation: result.translation_generation,
             status: if result.source_text.trim().is_empty() {
                 "empty"
             } else {
@@ -1553,6 +1862,8 @@ fn get_translation_result(state: State<'_, CaptureState>) -> Result<TranslationS
     }
 
     Ok(TranslationSnapshot {
+        request_id: result.request_id,
+        translation_generation: result.translation_generation,
         status: "processing".to_string(),
         text: None,
         error: None,
@@ -1575,7 +1886,7 @@ fn retranslate(
     source_text: String,
     source_language: String,
     target_language: String,
-) -> Result<(), String> {
+) -> Result<TranslationRequestToken, String> {
     if source_text_utf16_len(&source_text) > MAX_SOURCE_TEXT_UTF16_UNITS {
         return Err(format!("原文不能超过 {MAX_SOURCE_TEXT_UTF16_UNITS} 个字符"));
     }
@@ -1611,7 +1922,8 @@ fn retranslate(
         result.translation_generation = result.translation_generation.saturating_add(1);
         result.source_language = source_language.clone();
         result.target_language = target_language.clone();
-        result.translation_text = None;
+        result.translation_in_progress = true;
+        result.translation_text = Some(String::new());
         result.translation_error = None;
         (
             result.request_id,
@@ -1628,7 +1940,10 @@ fn retranslate(
         source_language,
         target_language,
     );
-    Ok(())
+    Ok(TranslationRequestToken {
+        request_id,
+        translation_generation,
+    })
 }
 
 #[tauri::command]
@@ -1794,6 +2109,7 @@ pub fn run() {
             request_screen_capture_permission,
             save_provider_api_key,
             save_translation_settings,
+            resize_result_window,
             set_capture_shortcut,
             set_launch_at_login,
             set_main_window_layout,
@@ -1952,9 +2268,10 @@ pub fn run() {
 mod tests {
     use super::{
         desired_launch_at_login, manual_translation_result, normalize_app_settings,
-        normalize_capture_shortcut, selection_to_pixel_rect, should_show_onboarding_on_launch,
-        source_text_utf16_len, truncate_source_text, AppSettings, CaptureSelection,
-        DEFAULT_CAPTURE_SHORTCUT, DEFAULT_TRANSLATION_SHORTCUT, MAX_SOURCE_TEXT_UTF16_UNITS,
+        normalize_capture_shortcut, normalize_ocr_text_layout, selection_to_pixel_rect,
+        should_show_onboarding_on_launch, source_text_utf16_len, truncate_source_text, AppSettings,
+        CaptureSelection, DEFAULT_CAPTURE_SHORTCUT, DEFAULT_TRANSLATION_SHORTCUT,
+        MAX_SOURCE_TEXT_UTF16_UNITS,
     };
 
     #[test]
@@ -1981,6 +2298,43 @@ mod tests {
         assert_eq!(
             source_text_utf16_len(&truncated),
             MAX_SOURCE_TEXT_UTF16_UNITS
+        );
+    }
+
+    #[test]
+    fn ocr_visual_line_wraps_are_joined_and_sentence_boundaries_become_paragraphs() {
+        let recognized = concat!(
+            "The NPR Network begins with questions, not\n",
+            "conclusions. With your support, we continue to share\n",
+            "independent journalism that helps you understand the\n",
+            "world around you.\n",
+            "Your support makes this work possible."
+        );
+
+        assert_eq!(
+            normalize_ocr_text_layout(recognized),
+            concat!(
+                "The NPR Network begins with questions, not conclusions. ",
+                "With your support, we continue to share independent journalism that helps ",
+                "you understand the world around you.\n\n",
+                "Your support makes this work possible."
+            )
+        );
+    }
+
+    #[test]
+    fn ocr_layout_handles_cjk_hyphenation_lists_and_abbreviations() {
+        assert_eq!(
+            normalize_ocr_text_layout("这是视觉换行\n但仍属于同一句。\n这是新的段落。"),
+            "这是视觉换行但仍属于同一句。\n\n这是新的段落。"
+        );
+        assert_eq!(
+            normalize_ocr_text_layout("An indepen-\ndent newsroom.\n\nDr.\nSmith reports."),
+            "An independent newsroom.\n\nDr. Smith reports."
+        );
+        assert_eq!(
+            normalize_ocr_text_layout("Shopping list\n1. Apples\n2. Oranges"),
+            "Shopping list\n\n1. Apples\n\n2. Oranges"
         );
     }
 

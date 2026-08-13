@@ -26,6 +26,7 @@ unsafe extern "C" {
     fn ost_configure_capture_window(window_pointer: *mut c_void);
     fn ost_present_capture_window(window_pointer: *mut c_void);
     fn ost_configure_result_window(window_pointer: *mut c_void);
+    fn ost_resize_result_window(window_pointer: *mut c_void, height: f64);
     fn ost_copy_text_to_clipboard(text: *const c_char) -> bool;
     fn ost_capture_display_png(
         output_path: *const c_char,
@@ -72,6 +73,10 @@ pub fn present_capture_window(window_pointer: *mut c_void) {
 
 pub fn configure_result_window(window_pointer: *mut c_void) {
     unsafe { ost_configure_result_window(window_pointer) }
+}
+
+pub fn resize_result_window(window_pointer: *mut c_void, height: f64) {
+    unsafe { ost_resize_result_window(window_pointer, height) }
 }
 
 pub fn copy_text_to_clipboard(text: &str) -> Result<(), String> {

@@ -60,12 +60,25 @@ type SourceTextSnapshot = {
 };
 
 type TranslationSnapshot = {
+  requestId: number;
+  translationGeneration: number;
   status: "processing" | "ready" | "empty" | "error";
   text: string | null;
   error: string | null;
   sourceLanguage: SourceLanguageCode;
   targetLanguage: LanguageCode;
   manualInput: boolean;
+};
+
+type TranslationProgress = {
+  requestId: number;
+  translationGeneration: number;
+  text: string;
+};
+
+type TranslationRequestToken = {
+  requestId: number;
+  translationGeneration: number;
 };
 
 function requireElement<T extends Element>(selector: string): T {
@@ -1573,10 +1586,12 @@ function renderResult() {
         <span class="source-character-count" aria-live="polite">0/${MAX_SOURCE_TEXT_LENGTH}</span>
       </div>
     </section>
-    <section class="result-field">
-      <span>译文</span>
-      <div class="result-textarea-shell">
+    <section class="result-field translation-field">
+      <span class="translation-field-label">译文<span class="translation-streaming-label" aria-live="polite"></span></span>
+      <div class="result-textarea-shell translation-textarea-shell" data-streaming="false">
         <textarea class="translation-text" aria-label="译文" readonly placeholder="等待原文…"></textarea>
+        <div class="translation-text-measure" aria-hidden="true"></div>
+        <span class="translation-stream-indicator" aria-hidden="true"></span>
         <button class="translation-copy-button" type="button" aria-label="复制译文" title="复制译文" disabled>
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <rect x="8" y="8" width="11" height="11" rx="2"></rect>
@@ -1600,6 +1615,15 @@ function renderResult() {
   );
   const sourceElement = requireElement<HTMLTextAreaElement>(".source-text");
   const translationElement = requireElement<HTMLTextAreaElement>(".translation-text");
+  const translationShellElement = requireElement<HTMLDivElement>(
+    ".translation-textarea-shell",
+  );
+  const translationMeasureElement = requireElement<HTMLDivElement>(
+    ".translation-text-measure",
+  );
+  const streamingLabelElement = requireElement<HTMLSpanElement>(
+    ".translation-streaming-label",
+  );
   const characterCountElement = requireElement<HTMLSpanElement>(
     ".source-character-count",
   );
@@ -1612,15 +1636,120 @@ function renderResult() {
   let sourceEditPending = false;
   let sourceEditTimer: ReturnType<typeof setTimeout> | undefined;
   let retranslationRevision = 0;
+  let activeTranslationToken: TranslationRequestToken | null = null;
   let copyFeedbackTimer: ReturnType<typeof setTimeout> | undefined;
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
   let toastHideTimer: ReturnType<typeof setTimeout> | undefined;
+  let layoutFrame: number | undefined;
+  let lastRequestedWindowHeight = 404;
+
+  const RESULT_MIN_WINDOW_HEIGHT = 404;
+  const RESULT_MIN_TRANSLATION_HEIGHT = 76;
+  const RESULT_WINDOW_MAX_SCREEN_RATIO = 0.7;
 
   dragRegionElement.addEventListener("mousedown", (event) => {
     if (event.button !== 0) return;
     event.preventDefault();
     void getCurrentWindow().startDragging();
   });
+
+  const sameTranslationToken = (
+    left: TranslationRequestToken | null,
+    right: TranslationRequestToken,
+  ) =>
+    left?.requestId === right.requestId &&
+    left.translationGeneration === right.translationGeneration;
+
+  const scheduleResultLayout = () => {
+    if (layoutFrame !== undefined) cancelAnimationFrame(layoutFrame);
+    layoutFrame = requestAnimationFrame(() => {
+      layoutFrame = undefined;
+      const availableScreenHeight = Math.max(
+        RESULT_MIN_WINDOW_HEIGHT,
+        window.screen.availHeight || window.innerHeight,
+      );
+      const maxWindowHeight = Math.max(
+        RESULT_MIN_WINDOW_HEIGHT,
+        Math.floor(availableScreenHeight * RESULT_WINDOW_MAX_SCREEN_RATIO),
+      );
+      const statusExtraHeight = statusElement.hidden ? 0 : statusElement.scrollHeight + 12;
+      const maxTranslationHeight = Math.max(
+        RESULT_MIN_TRANSLATION_HEIGHT,
+        maxWindowHeight -
+          RESULT_MIN_WINDOW_HEIGHT +
+          RESULT_MIN_TRANSLATION_HEIGHT -
+          statusExtraHeight,
+      );
+      const naturalHeight = Math.max(
+        RESULT_MIN_TRANSLATION_HEIGHT,
+        translationMeasureElement.scrollHeight,
+      );
+      const translationHeight = Math.min(naturalHeight, maxTranslationHeight);
+      const heightValue = `${translationHeight}px`;
+      translationElement.style.height = heightValue;
+      translationShellElement.style.height = heightValue;
+      translationElement.style.overflowY =
+        naturalHeight > translationHeight ? "auto" : "hidden";
+
+      const requestedWindowHeight = Math.min(
+        maxWindowHeight,
+        RESULT_MIN_WINDOW_HEIGHT +
+          translationHeight -
+          RESULT_MIN_TRANSLATION_HEIGHT +
+          statusExtraHeight,
+      );
+      if (Math.abs(requestedWindowHeight - lastRequestedWindowHeight) >= 1) {
+        lastRequestedWindowHeight = requestedWindowHeight;
+        void invoke<number>("resize_result_window", { height: requestedWindowHeight }).catch(
+          () => undefined,
+        );
+      }
+    });
+  };
+
+  const resetTranslationLayout = () => {
+    translationMeasureElement.textContent = "\u200b";
+    translationElement.style.height = `${RESULT_MIN_TRANSLATION_HEIGHT}px`;
+    translationShellElement.style.height = `${RESULT_MIN_TRANSLATION_HEIGHT}px`;
+    translationElement.style.overflowY = "hidden";
+    translationElement.scrollTop = 0;
+    lastRequestedWindowHeight = RESULT_MIN_WINDOW_HEIGHT;
+    void invoke<number>("resize_result_window", {
+      height: RESULT_MIN_WINDOW_HEIGHT,
+    }).catch(() => undefined);
+  };
+
+  const setStreamingState = (streaming: boolean) => {
+    translationShellElement.dataset.streaming = String(streaming);
+    translationElement.setAttribute("aria-busy", String(streaming));
+    streamingLabelElement.textContent = streaming ? "正在生成" : "";
+  };
+
+  const setTranslationContent = (text: string, streaming: boolean) => {
+    const distanceFromBottom =
+      translationElement.scrollHeight -
+      translationElement.clientHeight -
+      translationElement.scrollTop;
+    const shouldFollowOutput = distanceFromBottom < 32;
+    translationElement.value = text;
+    translationMeasureElement.textContent = `${text}\u200b`;
+    translationElement.placeholder = text ? "" : streaming ? "翻译中…" : "";
+    setStreamingState(streaming);
+    scheduleResultLayout();
+    if (shouldFollowOutput) {
+      requestAnimationFrame(() => {
+        translationElement.scrollTop = translationElement.scrollHeight;
+      });
+    }
+  };
+
+  const clearTranslationContent = (placeholder: string) => {
+    translationElement.value = "";
+    translationElement.placeholder = placeholder;
+    translationMeasureElement.textContent = "\u200b";
+    setStreamingState(false);
+    scheduleResultLayout();
+  };
 
   const updateResultStatus = (
     message: string,
@@ -1630,6 +1759,7 @@ function renderResult() {
     statusElement.textContent = shouldShow ? message : "";
     statusElement.dataset.state = state;
     statusElement.hidden = !shouldShow;
+    scheduleResultLayout();
   };
 
   const showError = (message: string) => {
@@ -1671,29 +1801,50 @@ function renderResult() {
     if (sourceEditPending) return;
     try {
       const result = await invoke<TranslationSnapshot>("get_translation_result");
+      const resultToken = {
+        requestId: result.requestId,
+        translationGeneration: result.translationGeneration,
+      };
+      const isNewTranslation = !sameTranslationToken(activeTranslationToken, resultToken);
+      if (
+        activeTranslationToken &&
+        (resultToken.requestId < activeTranslationToken.requestId ||
+          (resultToken.requestId === activeTranslationToken.requestId &&
+            resultToken.translationGeneration <
+              activeTranslationToken.translationGeneration))
+      ) {
+        return;
+      }
+      activeTranslationToken = resultToken;
+      if (isNewTranslation) resetTranslationLayout();
       sourceLanguageElement.value = result.sourceLanguage;
       targetLanguageElement.value = result.targetLanguage;
       if (result.status === "ready") {
-        translationElement.value = result.text ?? "";
-        translationElement.placeholder = "";
+        setTranslationContent(result.text ?? "", false);
         updateResultStatus("", "ready");
       } else if (result.status === "empty") {
-        translationElement.value = "";
-        translationElement.placeholder = result.manualInput ? "等待输入…" : "无可翻译文本";
+        clearTranslationContent(result.manualInput ? "等待输入…" : "无可翻译文本");
         updateResultStatus("未识别到文本", "empty");
       } else if (result.status === "error") {
-        translationElement.value = "";
-        translationElement.placeholder = "翻译失败";
+        clearTranslationContent("翻译失败");
         showError(`翻译失败：${result.error ?? "未知错误"}`);
       } else {
-        translationElement.value = "";
-        translationElement.placeholder = "翻译中…";
+        const streamedText = result.text ?? "";
+        if (
+          !isNewTranslation &&
+          translationElement.value.length > streamedText.length
+        ) {
+          setStreamingState(true);
+        } else {
+          setTranslationContent(streamedText, true);
+        }
         updateResultStatus("正在翻译…", "processing");
       }
       updateCopyAvailability();
     } catch {
-      translationElement.value = "";
-      translationElement.placeholder = "等待原文…";
+      activeTranslationToken = null;
+      resetTranslationLayout();
+      clearTranslationContent("等待原文…");
       updateCopyAvailability();
     }
   };
@@ -1706,22 +1857,26 @@ function renderResult() {
     }
     const revision = ++retranslationRevision;
     sourceEditPending = true;
-    translationElement.value = "";
-    translationElement.placeholder = "翻译中…";
+    activeTranslationToken = null;
+    resetTranslationLayout();
+    clearTranslationContent("翻译中…");
+    setStreamingState(true);
     updateCopyAvailability();
     updateResultStatus("正在翻译…", "processing");
     try {
-      await invoke("retranslate", {
+      const token = await invoke<TranslationRequestToken>("retranslate", {
         sourceText: sourceElement.value,
         sourceLanguage: sourceLanguageElement.value,
         targetLanguage: targetLanguageElement.value,
       });
       if (revision !== retranslationRevision) return;
+      activeTranslationToken = token;
       sourceEditPending = false;
       await loadTranslation();
     } catch (error) {
       if (revision !== retranslationRevision) return;
       sourceEditPending = false;
+      setStreamingState(false);
       showError(`重新翻译失败：${String(error)}`);
     }
   };
@@ -1745,10 +1900,11 @@ function renderResult() {
       await loadTranslation();
     } catch {
       sourceReady = false;
+      activeTranslationToken = null;
+      resetTranslationLayout();
       sourceElement.value = "";
       sourceElement.placeholder = "识别中…";
-      translationElement.value = "";
-      translationElement.placeholder = "等待原文…";
+      clearTranslationContent("等待原文…");
       updateCharacterCount();
       updateCopyAvailability();
       updateResultStatus("正在识别…", "processing");
@@ -1769,12 +1925,13 @@ function renderResult() {
   targetLanguageElement.addEventListener("change", () => void requestRetranslation());
   sourceElement.addEventListener("input", () => {
     retranslationRevision += 1;
+    activeTranslationToken = null;
     sourceReady = true;
     sourceEditPending = true;
     sourceElement.placeholder = sourceElement.value ? "" : "请输入原文";
     updateCharacterCount();
-    translationElement.value = "";
-    translationElement.placeholder = "等待输入完成…";
+    resetTranslationLayout();
+    clearTranslationContent("等待输入完成…");
     updateCopyAvailability();
     updateResultStatus("正在等待输入…", "processing");
     if (sourceEditTimer !== undefined) clearTimeout(sourceEditTimer);
@@ -1802,7 +1959,25 @@ function renderResult() {
   void listen("ocr-ready", () => void loadResult());
   void listen<string>("ocr-error", (event) => {
     sourceReady = false;
+    activeTranslationToken = null;
+    resetTranslationLayout();
+    clearTranslationContent("等待原文…");
+    updateCopyAvailability();
     showError(`OCR 失败：${event.payload}`);
+  });
+  void listen<TranslationProgress>("translation-progress", (event) => {
+    if (sourceEditPending) return;
+    const progress = event.payload;
+    if (
+      activeTranslationToken &&
+      !sameTranslationToken(activeTranslationToken, progress)
+    ) {
+      return;
+    }
+    activeTranslationToken = progress;
+    setTranslationContent(progress.text, true);
+    updateCopyAvailability();
+    updateResultStatus("正在翻译…", "processing");
   });
   void listen("translation-ready", () => void loadTranslation());
   void listen("translation-error", () => void loadTranslation());
