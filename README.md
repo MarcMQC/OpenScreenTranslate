@@ -1,10 +1,28 @@
-# OpenScreenTranslate
+<p align="center">
+  <img src="./src-tauri/icons/icon.png" width="128" height="128" alt="OpenScreenTranslate 应用图标">
+</p>
 
-> 一款由 AI 驱动的开源 macOS 菜单栏截图翻译工具，帮助你快速识别并翻译屏幕文本。使用翻译功能前，需要自行申请并配置受支持 AI 服务供应商的 API Key。
+<h1 align="center">OpenScreenTranslate</h1>
 
-**下载安装体验：** [前往 GitHub Releases 下载最新 macOS DMG 安装包](https://github.com/MarcMQC/OpenScreenTranslate/releases)
+<p align="center">
+  一款由 AI 驱动的开源 macOS 菜单栏截图翻译工具，帮助你快速识别并翻译屏幕文本。
+</p>
+
+<p align="center">
+  <a href="https://github.com/MarcMQC/OpenScreenTranslate/releases"><strong>下载最新 macOS DMG 安装包</strong></a>
+</p>
+
+使用翻译功能前，需要自行申请并配置受支持 AI 服务供应商的 API Key。
 
 OpenScreenTranslate 基于 Tauri 2、Rust、ScreenCaptureKit 与 Apple Vision 构建。应用常驻菜单栏，不显示 Dock 图标，并支持截图翻译与手动输入翻译。OCR 在本机完成，只有待翻译文本会发送至用户选择的 AI 服务。
+
+## 界面预览
+
+<p align="center">
+  <img src="./docs/assets/translation-window.png" width="900" alt="OpenScreenTranslate 翻译窗口">
+</p>
+
+<p align="center"><sub>支持自动检测源语言、编辑 OCR 原文和流式显示译文。</sub></p>
 
 ## 功能特性
 
